@@ -2424,24 +2424,37 @@ async function loadBattleLobby(){
       el.innerHTML='<div class="app-empty"><div class="app-empty-ico">⚓</div>No open games. Create one!</div>';
       return;
     }
-    el.innerHTML=games.map(g=>{
+    el.innerHTML='';
+    games.forEach(function(g){
       const isChallenge=g.challenge_to&&g.challenge_to===userAddr;
       const isMine=userAddr&&g.player1_wallet===userAddr;
       const betLabel=g.bet_token==='FREE'
         ?'<span style="color:var(--green);">🎮 Free Play</span>'
         :'<span style="color:var(--gold);">💰 '+g.bet_amount+' '+g.bet_token+' each</span>';
-      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:var(--bg2);border:1px solid '+(isChallenge?'rgba(226,75,74,0.4)':'var(--border)')+';border-radius:var(--r);margin-bottom:10px;">'
-        +'<div>'
+      const row=document.createElement('div');
+      row.style.cssText='display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:var(--bg2);border:1px solid '+(isChallenge?'rgba(226,75,74,0.4)':'var(--border)')+';border-radius:var(--r);margin-bottom:10px;';
+      row.innerHTML='<div>'
         +'<div style="font-size:14px;font-weight:700;">'+(isChallenge?'<span style="color:#E24B4A;">⚔️ Challenge from </span>':'')+sAddr(g.player1_wallet)+'</div>'
         +'<div style="font-size:13px;margin-top:4px;">'+betLabel+'</div>'
         +'<div style="font-size:11px;color:var(--muted);margin-top:2px;">'+tAgo(g.created_at)+' ago</div>'
-        +'</div>'
-        +'<div>'+(isMine
-          ?'<button onclick="cancelBattleGame(''+g.id+'')" style="background:var(--bg3);border:1px solid var(--border);color:var(--red);border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;">Cancel</button>'
-          :'<button onclick="joinBattleGame(''+g.id+'',''+g.bet_amount+'',''+g.bet_token+'')" style="background:'+(isChallenge?'#E24B4A':'var(--gold)')+';color:'+(isChallenge?'#fff':'#08090C')+';border-radius:8px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;">'+(isChallenge?'⚔️ Accept!':'⚔️ Join')+'</button>'
-        )+'</div>'
         +'</div>';
-    }).join('');
+      const btnDiv=document.createElement('div');
+      if(isMine){
+        const btn=document.createElement('button');
+        btn.textContent='Cancel';
+        btn.style.cssText='background:var(--bg3);border:1px solid var(--border);color:var(--red);border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;';
+        btn.onclick=(function(id){return function(){cancelBattleGame(id);};})(g.id);
+        btnDiv.appendChild(btn);
+      } else {
+        const btn=document.createElement('button');
+        btn.textContent=isChallenge?'⚔️ Accept!':'⚔️ Join';
+        btn.style.cssText='background:'+(isChallenge?'#E24B4A':'var(--gold)')+';color:'+(isChallenge?'#fff':'#08090C')+';border-radius:8px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;';
+        btn.onclick=(function(id,amt,tok){return function(){joinBattleGame(id,amt,tok);};})(g.id,g.bet_amount,g.bet_token);
+        btnDiv.appendChild(btn);
+      }
+      row.appendChild(btnDiv);
+      el.appendChild(row);
+    });
   }catch(e){el.innerHTML='<div class="app-empty">Failed to load</div>';}
 }
 
