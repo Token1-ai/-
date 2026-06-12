@@ -679,9 +679,9 @@ textarea.form-inp{resize:vertical;min-height:80px;}
 
         <button class="side-btn" id="tab-lending" onclick="showTab('lending')"><span class="side-ico">🏦</span>Lending</button>
         <button class="side-btn" id="tab-games" onclick="showTab('games')"><span class="side-ico">🎮</span>Games</button>
-        <button class="side-btn" id="tab-battle" onclick="showTab('battle')"><span class="side-ico">⚓</span>Battleship</button>
-        <button class="side-btn" id="tab-dice" onclick="showTab('dice')"><span class="side-ico">🎲</span>Dice Game</button>
-        <button class="side-btn" id="tab-lottery" onclick="showTab('lottery')"><span class="side-ico">🎰</span>Lottery</button>
+        
+        
+        
 
         <button class="side-btn" id="tab-market" onclick="showTab('market')"><span class="side-ico">🛒</span>NFT Market</button>
         <button class="side-btn" id="tab-explore" onclick="showTab('explore')"><span class="side-ico">🔍</span>Explore</button>
@@ -1470,9 +1470,9 @@ textarea.form-inp{resize:vertical;min-height:80px;}
     <button class="mob-btn" onclick="showTab('staking')"><span class="mob-ico">💎</span>Stake</button>
 
     <button class="mob-btn" onclick="showTab('lending')"><span class="mob-ico">🏦</span>Lend</button>
-    <button class="mob-btn" onclick="showTab('battle')"><span class="mob-ico">⚓</span>Battle</button>
-    <button class="mob-btn" onclick="showTab('dice')"><span class="mob-ico">🎲</span>Dice</button>
-    <button class="mob-btn" onclick="showTab('lottery')"><span class="mob-ico">🎰</span>Lottery</button>
+    
+    
+    
 
     <button class="mob-btn" onclick="showTab('market')"><span class="mob-ico">🛒</span>Market</button>
     <button class="mob-btn" onclick="showTab('explore')"><span class="mob-ico">🔍</span>Explore</button>
@@ -2770,11 +2770,14 @@ function clearPreview(){
 }
 
 function handleMyBoardClick(idx){
+  // Only allow placement during place phase
+  if(currentBsGame&&currentBsGame!=='AI'&&shipsPlaced) return;
+  if(shipsPlaced&&currentBsGame==='AI'){
+    // Game started, don't allow placement
+    return;
+  }
   if(!selectedShipSize){
-    // Show ship selector if hidden
-    const panel=document.getElementById('shipsPanel');
-    if(panel&&panel.style.display==='none') panel.style.display='block';
-    showToast('Select a ship type first','err');
+    showToast('Select a ship type first ↓','err');
     return;
   }
   const cells=getPlacementCells(idx,selectedShipSize,shipOrientation);
@@ -3028,27 +3031,24 @@ async function rollDice(){
     await switchToLitVM();
     const freshSigner=await provider.getSigner();
     const gate=new ethers.Contract(GATE_TOKEN,GATE_ABI,freshSigner);
-    const DICE_ABI_FULL=['function roll(uint8,uint256) nonpayable','function play(uint8,uint256) nonpayable','function rollDice(uint8,uint256) nonpayable'];
-    const dice=new ethers.Contract(GATE_DICE,DICE_ABI_FULL,freshSigner);
     const amount=ethers.parseEther(diceBet.toString());
     showToast('Approving GATE...','ok');
     await (await gate.approve(GATE_DICE,amount)).wait();
     btn.textContent='Rolling...';btn.disabled=true;
     document.getElementById('diceEmoji').textContent='🎲';
     document.getElementById('diceResultText').textContent='Rolling...';
-    let tx;
-    if(typeof dice.roll==='function') tx=await dice.roll(diceGuess,amount);
-    else if(typeof dice.play==='function') tx=await dice.play(diceGuess,amount);
-    else if(typeof dice.rollDice==='function') tx=await dice.rollDice(diceGuess,amount);
-    else throw new Error('Contract function not found');
+    // Direct ABI call
+    const DICE_IFACE = new ethers.Interface(['function roll(uint8 guess, uint256 bet)']);
+    const diceCalldata = DICE_IFACE.encodeFunctionData('roll',[diceGuess, amount]);
+    const tx = await freshSigner.sendTransaction({to:GATE_DICE,data:diceCalldata});
     const receipt=await tx.wait();
     // Parse result from event
     const iface=new ethers.Interface(['event DiceRolled(address indexed player,uint8 guess,uint8 result,bool won,uint256 payout)']);
     let won=false,result=0,payout=0n;
     for(const log of receipt.logs){
       try{
-        const parsed=iface.parseLog(log);
-        if(parsed){won=parsed.args.won;result=parsed.args.result;payout=parsed.args.payout;}
+        const parsed=iface.parseLog({topics:log.topics,data:log.data});
+        if(parsed&&parsed.name==='DiceRolled'){won=parsed.args.won;result=Number(parsed.args.result);payout=parsed.args.payout;}
       }catch{}
     }
     // Animate dice
@@ -3129,13 +3129,10 @@ async function buyLotteryTicket(){
     btn.textContent='Buying...';btn.disabled=true;
     showToast('Confirm in MetaMask...','ok');
     // Try multiple function signatures
-    const LOTTERY_ABI_FULL=['function buyTicket(uint256) nonpayable','function buyTickets(uint256) nonpayable','function enter(uint256) nonpayable','function buy(uint256) nonpayable'];
-    const lottery=new ethers.Contract(GATE_LOTTERY,LOTTERY_ABI_FULL,freshSigner);
-    let tx;
-    if(typeof lottery.buyTicket==='function') tx=await lottery.buyTicket(lotteryQty);
-    else if(typeof lottery.buyTickets==='function') tx=await lottery.buyTickets(lotteryQty);
-    else if(typeof lottery.enter==='function') tx=await lottery.enter(lotteryQty);
-    else throw new Error('Contract function not found');
+    // Direct ABI call with exact selector
+    const LOTTERY_IFACE = new ethers.Interface(['function buyTicket(uint256 qty)']);
+    const calldata = LOTTERY_IFACE.encodeFunctionData('buyTicket',[BigInt(lotteryQty)]);
+    const tx = await freshSigner.sendTransaction({to:GATE_LOTTERY,data:calldata});
     await tx.wait();
     showToast('🎟️ Ticket bought! Good luck!','ok');
     loadLottery();
