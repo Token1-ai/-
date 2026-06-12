@@ -455,16 +455,16 @@ textarea.form-inp{resize:vertical;min-height:80px;}
         <div id="nftPreview" style="margin-top:8px;"></div>
       </div>
       <div id="avatarUploadTab" style="display:none;">
-        <div onclick="document.getElementById('avatarFile').click()" style="border:2px dashed var(--border);border-radius:9px;padding:24px;text-align:center;cursor:pointer;color:var(--muted);font-size:13px;transition:all .2s;" onmouseover="this.style.borderColor='var(--gold)';this.style.background='rgba(245,200,66,0.04)'" onmouseout="this.style.borderColor='var(--border)';this.style.background=''">
-          <div style="font-size:32px;margin-bottom:8px;">📷</div>
-          <div style="font-weight:600;color:var(--text);margin-bottom:4px;">Click to choose photo</div>
-          <div style="font-size:11px;">From gallery, camera or files</div>
+        <div style="margin-bottom:10px;">
+          <button type="button" onclick="document.getElementById('avatarFile').click()" style="width:100%;padding:16px;border:2px dashed var(--border);border-radius:9px;background:var(--bg3);cursor:pointer;color:var(--text);font-size:14px;font-weight:600;transition:all .2s;" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='var(--border)'">
+            📷 Choose photo from gallery / files
+          </button>
+          <input type="file" id="avatarFile" accept="image/*" style="display:none;" onchange="uploadAvatarFile(this)"/>
         </div>
-        <input type="file" id="avatarFile" accept="image/*" style="display:none;" onchange="uploadAvatarFile(this)"/>
-        <div id="uploadAvatarStatus" style="font-size:12px;color:var(--muted);margin-top:6px;text-align:center;"></div>
+        <div id="uploadAvatarStatus" style="font-size:13px;color:var(--muted);text-align:center;padding:4px;"></div>
         <div id="avatarPreviewBox" style="margin-top:10px;display:none;text-align:center;">
-          <img id="avatarPreviewImg" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid var(--gold);"/>
-          <div style="font-size:11px;color:var(--green);margin-top:6px;">✓ Photo selected</div>
+          <img id="avatarPreviewImg" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:3px solid var(--gold);"/>
+          <div style="font-size:12px;color:var(--green);margin-top:6px;font-weight:600;">✓ Photo ready — click Save Profile</div>
         </div>
       </div>
     </div>
@@ -2602,9 +2602,7 @@ function startAIGame(){
   document.getElementById('battleGame').style.display='block';
   document.getElementById('battleStatus').textContent='🤖 VS Computer — Place your ships!';
   document.getElementById('enemyBoardLabel').textContent='Enemy Fleet (AI) — Click to fire!';
-  document.getElementById('dmBackBtn').style.display='block';
-  document.getElementById('dmBackBtn').textContent='← Leave';
-  document.getElementById('dmBackBtn').onclick=leaveBattleGame;
+
   renderBoards();
   document.getElementById('readyBtn').style.display='none';
   document.getElementById('placeShipsBtn').style.display='inline-block';
@@ -2649,41 +2647,48 @@ function leaveBattleGame(){
 function renderBoards(){
   const myEl=document.getElementById('myBoard');
   const enEl=document.getElementById('enemyBoard');
+  if(!myEl||!enEl) return;
   myEl.innerHTML='';enEl.innerHTML='';
+
   for(let i=0;i<100;i++){
+    // MY BOARD — place ships + show enemy shots
     const myCell=document.createElement('div');
     myCell.style.cssText='aspect-ratio:1;border-radius:2px;cursor:crosshair;'+CELL_STYLES.empty;
     myCell.id='my-'+i;
-    myCell.onclick=(()=>{const idx=i;return()=>handleMyBoardClick(idx);})();
-    // Hover preview
-    myCell.onmouseover=(()=>{const idx=i;return()=>previewPlacement(idx);})();
+    myCell.onclick=(function(idx){return function(){handleMyBoardClick(idx);};})(i);
+    myCell.onmouseover=(function(idx){return function(){previewPlacement(idx);};})(i);
     myCell.onmouseout=clearPreview;
     myEl.appendChild(myCell);
+
+    // ENEMY BOARD — fire shots (never show enemy ships)
     const enCell=document.createElement('div');
     enCell.style.cssText='aspect-ratio:1;border-radius:2px;cursor:crosshair;'+CELL_STYLES.empty;
     enCell.id='en-'+i;
-    enCell.onclick=()=>fireShot(i);
+    enCell.onclick=(function(idx){return function(){fireShot(idx);};})(i);
     enEl.appendChild(enCell);
   }
-  // Show my ships
-  myShips.forEach(idx=>{
+
+  // Show MY ships on MY board only
+  myShips.forEach(function(idx){
     const c=document.getElementById('my-'+idx);
-    if(c) c.style.cssText='aspect-ratio:1;border-radius:2px;'+CELL_STYLES.ship;
+    if(c){c.style.cssText='aspect-ratio:1;border-radius:2px;cursor:crosshair;'+CELL_STYLES.ship;}
   });
-  // Show MY shots on enemy board (hits/misses only - never show enemy ship positions)
-  myShots.forEach(s=>{
+
+  // Show MY shots on ENEMY board (hits/misses only — NEVER show enemy ships)
+  myShots.forEach(function(s){
     const c=document.getElementById('en-'+s.idx);
     if(c){
       c.style.cssText='aspect-ratio:1;border-radius:2px;cursor:default;'+(s.hit?CELL_STYLES.hit:CELL_STYLES.miss);
-      if(s.hit) c.innerHTML='<span style="color:var(--red);font-size:14px;font-weight:900;">✕</span>';
+      if(s.hit) c.innerHTML='<span style="color:#ff4d4d;font-size:14px;font-weight:900;line-height:1;">✕</span>';
     }
   });
-  // Show enemy shots on my board
-  enemyShots.forEach(s=>{
+
+  // Show ENEMY shots on MY board
+  enemyShots.forEach(function(s){
     const c=document.getElementById('my-'+s.idx);
     if(c){
-      c.style.cssText='aspect-ratio:1;border-radius:2px;'+(s.hit?CELL_STYLES.hit:CELL_STYLES.miss);
-      if(s.hit) c.innerHTML='<span style="color:var(--red);font-size:14px;font-weight:900;">✕</span>';
+      c.style.cssText='aspect-ratio:1;border-radius:2px;cursor:crosshair;'+(s.hit?CELL_STYLES.hit:CELL_STYLES.miss);
+      if(s.hit) c.innerHTML='<span style="color:#ff4d4d;font-size:14px;font-weight:900;line-height:1;">✕</span>';
     }
   });
 }
@@ -2770,12 +2775,8 @@ function clearPreview(){
 }
 
 function handleMyBoardClick(idx){
-  // Only allow placement during place phase
-  if(currentBsGame&&currentBsGame!=='AI'&&shipsPlaced) return;
-  if(shipsPlaced&&currentBsGame==='AI'){
-    // Game started, don't allow placement
-    return;
-  }
+  // If battle already started, don't allow placement
+  if(shipsPlaced) return;
   if(!selectedShipSize){
     showToast('Select a ship type first ↓','err');
     return;
