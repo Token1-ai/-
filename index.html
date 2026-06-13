@@ -1973,7 +1973,7 @@ async function loadProfile(wallet){
         `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <button class="follow-btn${isF?' following':''}" onclick="toggleFollow('${target}',this)">${isF?'Following':'Follow'}</button>
           <button id="bell-${target}" onclick="toggleBell('${target}',this)" title="${isBellOn('${target}')?'Notifications on — click to turn off':'Get notified of new posts'}" style="background:${isBellOn('${target}')?'rgba(245,200,66,0.1)':'var(--bg3)'};border:1px solid ${isBellOn('${target}')?'var(--gold)':'var(--border)'};border-radius:20px;padding:7px 12px;font-size:14px;cursor:pointer;color:${isBellOn('${target}')?'var(--gold)':'var(--muted)'};transition:all .2s;">🔔</button>
-          <button onclick="openChallenge('${target}','${esc(user.username||sAddr(target))}')" style="background:linear-gradient(135deg,rgba(226,75,74,0.15),rgba(192,57,43,0.08));border:1px solid rgba(226,75,74,0.3);color:#E24B4A;border-radius:20px;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer;transition:all .2s;">⚔️ Challenge</button>
+          <button onclick="openChallenge('${target}','${esc(u.username||sAddr(target))}')" style="background:linear-gradient(135deg,rgba(226,75,74,0.15),rgba(192,57,43,0.08));border:1px solid rgba(226,75,74,0.3);color:#E24B4A;border-radius:20px;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer;transition:all .2s;">⚔️ Challenge</button>
         </div>`
       }
     </div>
@@ -2179,10 +2179,10 @@ async function saveProfile(){
   const username=document.getElementById('editUsername').value.trim();
   const bio=document.getElementById('editBio').value.trim();
   let avatar_url=document.getElementById('editAvatar').value.trim();
-  // Auto-fix imgur album URLs to direct image format
+  // Warn about imgur album URLs
   if(avatar_url.includes('imgur.com/a/')) {
-    showToast('Use direct image link (right-click image → Copy image address)','err');
-    return;
+    showToast('Tip: use direct image URL (i.imgur.com/xxx.jpg)','err');
+    avatar_url='';
   }
   const cover_url=document.getElementById('editCover').value.trim();
   const website=document.getElementById('editWebsite').value.trim();
