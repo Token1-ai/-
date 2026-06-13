@@ -1972,12 +1972,22 @@ async function loadProfile(wallet){
         `<button class="edit-prof-btn" onclick="openEditModal()">Edit Profile</button>`:
         `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <button class="follow-btn${isF?' following':''}" onclick="toggleFollow('${target}',this)">${isF?'Following':'Follow'}</button>
-          <button id="bell-${target}" onclick="toggleBell('${target}',this)" title="${isBellOn('${target}')?'Notifications on — click to turn off':'Get notified of new posts'}" style="background:${isBellOn('${target}')?'rgba(245,200,66,0.1)':'var(--bg3)'};border:1px solid ${isBellOn('${target}')?'var(--gold)':'var(--border)'};border-radius:20px;padding:7px 12px;font-size:14px;cursor:pointer;color:${isBellOn('${target}')?'var(--gold)':'var(--muted)'};transition:all .2s;">🔔</button>
-          <button onclick="openChallenge('${target}','${esc(u.username||sAddr(target))}')" style="background:linear-gradient(135deg,rgba(226,75,74,0.15),rgba(192,57,43,0.08));border:1px solid rgba(226,75,74,0.3);color:#E24B4A;border-radius:20px;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer;transition:all .2s;">⚔️ Challenge</button>
+          <button id="bell-${target}" onclick="toggleBell('${target}',this)" style="background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:7px 12px;font-size:14px;cursor:pointer;color:var(--muted);transition:all .2s;">🔔</button>
+          <button onclick="openChallenge('${target}','${esc(u.username||sAddr(target))}')" style="background:linear-gradient(135deg,rgba(226,75,74,0.15),rgba(192,57,43,0.08));border:1px solid rgba(226,75,74,0.3);color:#E24B4A;border-radius:20px;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer;">⚔️ Challenge</button>
         </div>`
       }
     </div>
     <div id="profPosts"><div class="app-loader">Loading...</div></div>`;
+  // Update bell button state after render
+  const bellBtn=document.getElementById('bell-'+target);
+  if(bellBtn&&isBellOn(target)){
+    bellBtn.style.background='rgba(245,200,66,0.1)';
+    bellBtn.style.borderColor='var(--gold)';
+    bellBtn.style.color='var(--gold)';
+    bellBtn.title='Notifications on — click to turn off';
+  } else if(bellBtn){
+    bellBtn.title='Get notified of new posts';
+  }
   const {data:posts}=await sb.from('posts').select('*, users!posts_author_wallet_fkey(username,avatar_url,pass_type)').eq('author_wallet',target).order('created_at',{ascending:false});
   const pp=document.getElementById('profPosts');
   if(!posts||posts.length===0){pp.innerHTML='<div class="app-empty"><div class="app-empty-ico">✍️</div>No posts yet</div>';return;}
