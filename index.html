@@ -1520,7 +1520,7 @@ const GATE_STAKING  = '0xDD2d80b7c31622D084905899b4d40b815cF01bF8';
 const GATE_PRESALE  = '0xd1BD1853913F1CA242cD4D88a1F50EB0a6ba0854';
 const TOKEN_FACTORY   = '0xb69Df265Ac37A3E6AB2C940cFA395FE7fF0C0A60';
 const NFT_MARKET      = '0x2231E1aDcbb1FB59055d6442207Ac029553e5859';
-const GATE_REWARDS    = '0x1de30bC3490DB9ea1514DA791aA4dAE08e961E91';
+const GATE_REWARDS    = '0xf0A8E4E553700578F5b08219dc4D6Ce7491777e6';
 const GATE_DAO        = '0x0A71755Eb9A72669A627534e17FFafDBfbF49298';
 const GATE_LOTTERY    = '0xe57Af825502EE1E29E1e2027038a0F5E00ee7F7E';
 const GATE_DICE         = '0x3f72225815D7087f7b22A5C9600AEE3B0E5dB798';
@@ -1922,13 +1922,20 @@ async function likePost(postId,authorWallet,btn){
     const freshSigner=await provider.getSigner();
     const rewards=new ethers.Contract(GATE_REWARDS,REWARDS_ABI,freshSigner);
     // Get reward amount for this author (based on Gold/Silver Pass)
-    showToast('Sending GATE reward...','ok');
-    // Direct call using function selector to avoid ABI issues
-    // sendLikeReward(address) selector
-    const selector=ethers.id('sendLikeReward(address)').slice(0,10);
-    const encoded=ethers.AbiCoder.defaultAbiCoder().encode(['address'],[authorWallet]);
-    const data=selector+encoded.slice(2);
-    const tx=await freshSigner.sendTransaction({to:GATE_REWARDS,data:data,gasLimit:200000n});
+    // Get reward amount first
+    const rewardsC=new ethers.Contract(GATE_REWARDS,[
+      'function sendLikeReward(address author) external nonpayable',
+      'function getRewardFor(address author) external view returns(uint256)'
+    ],freshSigner);
+    const rewardAmt=await rewardsC.getRewardFor(authorWallet);
+    const rewardFmt=parseFloat(ethers.formatEther(rewardAmt)).toFixed(2);
+    // Approve GATE spend from liker's wallet
+    const gate=new ethers.Contract(GATE_TOKEN,GATE_ABI,freshSigner);
+    showToast('Approving '+rewardFmt+' GATE...','ok');
+    const approveTx=await gate.approve(GATE_REWARDS,rewardAmt);
+    await approveTx.wait();
+    showToast('Sending '+rewardFmt+' GATE to author...','ok');
+    const tx=await rewardsC.sendLikeReward(authorWallet);
     await tx.wait();
     await sb.from('likes').insert({post_id:postId,liker_wallet:userAddr,tx_hash:tx.hash});
     await createNotif(authorWallet,'like',postId);
