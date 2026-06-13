@@ -1587,9 +1587,11 @@ const DAO_ABI         = [
   'function MIN_TOKENS_TO_VOTE() view returns(uint256)',
 ];
 const REWARDS_ABI     = [
-  'function sendLikeReward(address author) nonpayable',
-  'function getRewardFor(address author) view returns(uint256)',
-  'function poolBalance() view returns(uint256)',
+  'function sendLikeReward(address author) external nonpayable',
+  'function getRewardFor(address author) external view returns(uint256)',
+  'function poolBalance() external view returns(uint256)',
+  'function rewardPool() external view returns(uint256)',
+  'function syncPool() external nonpayable',
 ];
 const NFT_MARKET_ABI  = [
   'function listNFT(address,uint256,uint256) returns(uint256)',
@@ -1921,9 +1923,8 @@ async function likePost(postId,authorWallet,btn){
     const rewards=new ethers.Contract(GATE_REWARDS,REWARDS_ABI,freshSigner);
     // Get reward amount for this author (based on Gold/Silver Pass)
     showToast('Sending GATE reward...','ok');
-    const LIKE_IFACE=new ethers.Interface(['function sendLikeReward(address) nonpayable']);
-    const likeData=LIKE_IFACE.encodeFunctionData('sendLikeReward',[authorWallet]);
-    const tx=await freshSigner.sendTransaction({to:GATE_REWARDS,data:likeData});
+    const rewardsC=new ethers.Contract(GATE_REWARDS,['function sendLikeReward(address author) external nonpayable'],freshSigner);
+    const tx=await rewardsC.sendLikeReward(authorWallet);
     await tx.wait();
     await sb.from('likes').insert({post_id:postId,liker_wallet:userAddr,tx_hash:tx.hash});
     await createNotif(authorWallet,'like',postId);
