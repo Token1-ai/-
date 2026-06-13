@@ -432,6 +432,17 @@ textarea.form-inp{resize:vertical;min-height:80px;}
   </div>
 </div>
 
+<!-- FOLLOWERS MODAL -->
+<div class="modal-overlay" id="followersModal">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:20px;padding:0;width:100%;max-width:420px;position:relative;overflow:hidden;">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+      <div style="font-size:16px;font-weight:700;" id="followersModalTitle">Followers</div>
+      <button onclick="document.getElementById('followersModal').classList.remove('open')" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;">✕</button>
+    </div>
+    <div id="followersModalList" style="max-height:400px;overflow-y:auto;padding:8px 0;"></div>
+  </div>
+</div>
+
 <!-- EDIT PROFILE MODAL -->
 <div class="modal-overlay" id="editModal">
   <div class="edit-modal-inner">
@@ -1962,8 +1973,8 @@ async function loadProfile(wallet){
       ${links.length?`<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px;">${links.join('')}</div>`:''}
       <div class="prof-stats">
         <div class="pstat"><div class="pstat-n">${pc||0}</div><div class="pstat-l">Posts</div></div>
-        <div class="pstat"><div class="pstat-n">${fc||0}</div><div class="pstat-l">Followers</div></div>
-        <div class="pstat"><div class="pstat-n">${fic||0}</div><div class="pstat-l">Following</div></div>
+        <div class="pstat" onclick="showFollowersList('${target}','followers')" style="cursor:pointer;" title="View followers"><div class="pstat-n">${fc||0}</div><div class="pstat-l">Followers</div></div>
+        <div class="pstat" onclick="showFollowersList('${target}','following')" style="cursor:pointer;" title="View following"><div class="pstat-n">${fic||0}</div><div class="pstat-l">Following</div></div>
       </div>
       ${isOwn?
         `<button class="edit-prof-btn" onclick="openEditModal()">Edit Profile</button>`:
@@ -1999,12 +2010,15 @@ async function toggleFollow(wallet,btn){
   if(f){
     await sb.from('follows').delete().eq('follower_wallet',userAddr).eq('following_wallet',wallet);
     btn.textContent='Follow';btn.classList.remove('following');
-    // Remove bell if was set
     removeBellNotif(wallet);
+    // Update follower count on page
+    const fcEl=document.querySelector('.pstat-n');
+    // Just reload profile to update counts
   } else {
     await sb.from('follows').insert({follower_wallet:userAddr,following_wallet:wallet});
     btn.textContent='Following';btn.classList.add('following');
     await createNotif(wallet,'follow');
+    showToast('Following! ✓','ok');
   }
 }
 
@@ -3676,6 +3690,57 @@ function renderUserCard(u){
 function viewUserProfile(wallet){
   showTab('profile');
   loadProfile(wallet);
+}
+
+async function showFollowersList(wallet, type){
+  document.getElementById('followersModal').classList.add('open');
+  const title=document.getElementById('followersModalTitle');
+  const list=document.getElementById('followersModalList');
+  title.textContent=type==='followers'?'Followers':'Following';
+  list.innerHTML='<div class="app-loader">Loading...</div>';
+  try{
+    let data,error;
+    if(type==='followers'){
+      const res=await sb.from('follows').select('follower_wallet').eq('following_wallet',wallet);
+      data=res.data;error=res.error;
+    } else {
+      const res=await sb.from('follows').select('following_wallet').eq('follower_wallet',wallet);
+      data=res.data;error=res.error;
+    }
+    if(error||!data||data.length===0){
+      list.innerHTML='<div class="app-empty" style="padding:20px;">No '+(type==='followers'?'followers':'following')+' yet</div>';
+      return;
+    }
+    const wallets=data.map(function(d){return type==='followers'?d.follower_wallet:d.following_wallet;});
+    const {data:users}=await sb.from('users').select('wallet,username,avatar_url,pass_type').in('wallet',wallets);
+    const usersMap={};
+    if(users) users.forEach(function(u){usersMap[u.wallet]=u;});
+    list.innerHTML='';
+    wallets.forEach(function(w){
+      const u=usersMap[w]||{wallet:w};
+      const av=u.avatar_url?('<img src="'+u.avatar_url+'" style="width:40px;height:40px;border-radius:50%;object-fit:cover;"/>'):'<div style="width:40px;height:40px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:18px;">🧑</div>';
+      const row=document.createElement('div');
+      row.style.cssText='display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;transition:background .15s;';
+      row.onmouseover=function(){this.style.background='var(--bg3)';};
+      row.onmouseout=function(){this.style.background='';};
+      const info=document.createElement('div');
+      info.style.cssText='flex:1;min-width:0;';
+      info.innerHTML='<div style="font-size:14px;font-weight:600;">'+(u.username||sAddr(w))+'</div><div style="font-size:11px;color:var(--muted);font-family:monospace;">'+w.slice(0,8)+'...'+w.slice(-4)+'</div>';
+      const dmBtn=document.createElement('button');
+      dmBtn.textContent='💬';
+      dmBtn.style.cssText='background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer;';
+      dmBtn.onclick=(function(addr){return function(e){e.stopPropagation();openDMWith(addr);document.getElementById('followersModal').classList.remove('open');};})(w);
+      const avWrap=document.createElement('div');avWrap.innerHTML=av;if(avWrap.firstChild)row.appendChild(avWrap.firstChild);
+      row.appendChild(info);
+      row.appendChild(dmBtn);
+      row.onclick=function(){
+        document.getElementById('followersModal').classList.remove('open');
+        loadProfile(w);
+        showTab('profile');
+      };
+      list.appendChild(row);
+    });
+  }catch(e){list.innerHTML='<div class="app-empty" style="padding:20px;">Error loading</div>';}
 }
 
 function openDMWith(wallet){
