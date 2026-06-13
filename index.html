@@ -1923,8 +1923,12 @@ async function likePost(postId,authorWallet,btn){
     const rewards=new ethers.Contract(GATE_REWARDS,REWARDS_ABI,freshSigner);
     // Get reward amount for this author (based on Gold/Silver Pass)
     showToast('Sending GATE reward...','ok');
-    const rewardsC=new ethers.Contract(GATE_REWARDS,['function sendLikeReward(address author) external nonpayable'],freshSigner);
-    const tx=await rewardsC.sendLikeReward(authorWallet);
+    // Direct call using function selector to avoid ABI issues
+    // sendLikeReward(address) selector
+    const selector=ethers.id('sendLikeReward(address)').slice(0,10);
+    const encoded=ethers.AbiCoder.defaultAbiCoder().encode(['address'],[authorWallet]);
+    const data=selector+encoded.slice(2);
+    const tx=await freshSigner.sendTransaction({to:GATE_REWARDS,data:data,gasLimit:200000n});
     await tx.wait();
     await sb.from('likes').insert({post_id:postId,liker_wallet:userAddr,tx_hash:tx.hash});
     await createNotif(authorWallet,'like',postId);
