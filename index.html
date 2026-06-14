@@ -2584,7 +2584,7 @@ async function loadBattleLobby(){
     const challenges=(allWaiting||[]).filter(g=>g.challenge_to&&g.challenge_to===userAddr);
     const openGames=(allWaiting||[]).filter(g=>!g.challenge_to||g.challenge_to!==userAddr);
     const games=[...challenges,...openGames];
-    console.log('Lobby: found',games.length,'games, waiting:',allWaiting?.length);
+    if(allWaiting&&allWaiting.length>0) showToast('Found '+allWaiting.length+' game(s) in lobby','ok');
     // Also check if I'm in an active game
     if(userAddr){
       const {data:myGames}=await sb.from('battleship_games')
@@ -2662,38 +2662,29 @@ async function createBattleGame(){
       showToast('Approving GATE...','ok');
       await (await gate.approve(BATTLESHIP_ADDR,amtWei)).wait();
       showToast('Creating game...','ok');
-      try{
-        const coder=ethers.AbiCoder.defaultAbiCoder();
-        const sel=ethers.id('createGameGATE(uint256)').slice(0,10);
-        const data=sel+coder.encode(['uint256'],[amtWei]).slice(2);
-        const receipt=await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data,gasLimit:400000n})).wait();
-        const evSig=ethers.id('GameCreated(uint256,address,uint256,uint8)');
-        for(const log of receipt.logs){
-          if(log.topics[0]===evSig){contractGameId=Number(BigInt(log.topics[1]));break;}
-        }
-      }catch(contractErr){
-        showToast('Contract error: '+(contractErr.reason||contractErr.message||'').slice(0,50),'err');
-        return;
+      const coder=ethers.AbiCoder.defaultAbiCoder();
+      const sel=ethers.id('createGameGATE(uint256)').slice(0,10);
+      const data=sel+coder.encode(['uint256'],[amtWei]).slice(2);
+      const receipt=await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data,gasLimit:400000n})).wait();
+      const evSig=ethers.id('GameCreated(uint256,address,uint256,uint8)');
+      for(const log of receipt.logs){
+        if(log.topics[0]===evSig){contractGameId=Number(BigInt(log.topics[1]));break;}
       }
+      // Save to DB after successful contract call
       await sb.from('battleship_games').insert({player1_wallet:userAddr,bet_amount:amt,bet_token:'GATE',status:'waiting',contract_game_id:contractGameId});
     } else {
       showToast('Creating game...','ok');
-      try{
-        const sel=ethers.id('createGameZK()').slice(0,10);
-        const receipt=await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data:sel,value:amtWei,gasLimit:400000n})).wait();
-        const evSig=ethers.id('GameCreated(uint256,address,uint256,uint8)');
-        for(const log of receipt.logs){
-          if(log.topics[0]===evSig){contractGameId=Number(BigInt(log.topics[1]));break;}
-        }
-      }catch(contractErr){
-        showToast('Contract error: '+(contractErr.reason||contractErr.message||'').slice(0,50),'err');
-        return;
+      const sel=ethers.id('createGameZK()').slice(0,10);
+      const receipt=await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data:sel,value:amtWei,gasLimit:400000n})).wait();
+      const evSig=ethers.id('GameCreated(uint256,address,uint256,uint8)');
+      for(const log of receipt.logs){
+        if(log.topics[0]===evSig){contractGameId=Number(BigInt(log.topics[1]));break;}
       }
       await sb.from('battleship_games').insert({player1_wallet:userAddr,bet_amount:amt,bet_token:'zkLTC',status:'waiting',contract_game_id:contractGameId});
     }
-    showToast('Game created! ⚓','ok');
+    showToast('Game created! ⚓ Visible in lobby now','ok');
     document.getElementById('bsBetAmt').value='';
-    loadBattleLobby();
+    await loadBattleLobby();
   }catch(e){showToast((e.reason||e.message||'Failed').slice(0,60),'err');}
 }
 
