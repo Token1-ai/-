@@ -2586,7 +2586,7 @@ async function loadBattleLobby(){
 
     // All waiting games
     const {data:waiting}=await sb.from('battleship_games')
-      .select('*,users!battleship_games_player1_wallet_fkey(username,avatar_url)')
+      .select('*')
       .eq('status','waiting')
       .order('created_at',{ascending:false}).limit(30);
 
