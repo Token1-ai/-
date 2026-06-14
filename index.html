@@ -2710,46 +2710,49 @@ async function createBattleGame(){
 async function bsJoinGame(gameDbId,betAmt,betToken){
   if(!userAddr){showToast('Connect wallet first','err');return;}
   try{
-    const {data:game}=await sb.from('battleship_games').select('*').eq('id',gameDbId).limit(1);
-    const g=game&&game[0];
+    const {data:games}=await sb.from('battleship_games').select('*').eq('id',gameDbId).limit(1);
+    const g=games&&games[0];
     if(!g){showToast('Game not found','err');return;}
     if(g.player1_wallet===userAddr){showToast('This is your own game','err');return;}
-    // Use exact values from DB
-    const amount=g.bet_amount;
-    const token=g.bet_token;
-    if(token!=='FREE'){
+    if(g.status!=='waiting'){showToast('Game no longer available','err');return;}
+
+    if(g.bet_token!=='FREE'&&parseFloat(g.bet_amount)>0){
       await switchToLitVM();
-      const amtWei=ethers.parseEther(amount);
       const freshSigner=await provider.getSigner();
-      if(token==='GATE'){
+      const amtWei=ethers.parseEther(g.bet_amount);
+      if(g.bet_token==='GATE'){
+        showToast('Approving '+g.bet_amount+' GATE...','ok');
         const gate=new ethers.Contract(GATE_TOKEN,GATE_ABI,freshSigner);
-        showToast('Approving '+amount+' GATE...','ok');
         await (await gate.approve(BATTLESHIP_ADDR,amtWei)).wait();
-        showToast('Joining game...','ok');
+        showToast('Joining on contract...','ok');
         const coder=ethers.AbiCoder.defaultAbiCoder();
         const sel=ethers.id('joinGameGATE(uint256)').slice(0,10);
-        const data=sel+coder.encode(['uint256'],[0n]).slice(2);
-        await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data,gasLimit:300000n})).wait();
+        const enc=coder.encode(['uint256'],[BigInt(g.contract_game_id||0)]);
+        await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data:sel+enc.slice(2),gasLimit:300000n})).wait();
       } else {
-        showToast('Sending '+amount+' zkLTC...','ok');
-        const amtWei=ethers.parseEther(amount);
-        const freshSigner=await provider.getSigner();
+        showToast('Sending '+g.bet_amount+' zkLTC...','ok');
         const coder=ethers.AbiCoder.defaultAbiCoder();
         const sel=ethers.id('joinGameZK(uint256)').slice(0,10);
-        const data=sel+coder.encode(['uint256'],[0n]).slice(2);
-        await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data,value:amtWei,gasLimit:300000n})).wait();
+        const enc=coder.encode(['uint256'],[BigInt(g.contract_game_id||0)]);
+        await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data:sel+enc.slice(2),value:amtWei,gasLimit:300000n})).wait();
       }
     }
-    // Update DB
     await sb.from('battleship_games').update({
-      player2_wallet:userAddr,
-      status:'playing',
-      current_turn:g.player1_wallet
+      player2_wallet:userAddr,status:'playing',current_turn:g.player1_wallet
     }).eq('id',gameDbId);
     showToast('Joined! Place your ships ⚔️','ok');
     bsJoinPvP(gameDbId);
-  }catch(e){showToast((e.reason||e.message||'Failed').slice(0,60),'err');}
+  }catch(e){
+    const msg=(e.reason||e.message||'Failed');
+    if(msg.includes('-32005')){
+      showToast('Network busy, try again in 2s...','err');
+      setTimeout(function(){bsJoinGame(gameDbId,betAmt,betToken);},2000);
+    } else {
+      showToast(msg.slice(0,60),'err');
+    }
+  }
 }
+
 
 // ── START PVP ──
 function bsJoinPvP(gameDbId){
@@ -2775,7 +2778,6 @@ function startAIGame(){
   bsPhase='placing';
   bsMyShots=[];bsEnemyShots=[];
   bsAIShips=[];bsAIFired=[];bsAIHunt=false;bsAIHuntList=[];
-  // Generate AI ships
   BS_SHIP_SIZES.forEach(function(size){
     var ok=false,tries=0;
     while(!ok&&tries++<2000){
@@ -2804,11 +2806,9 @@ function startAIGame(){
   bsInitBoard();
 }
 
-// ── BOARD INIT ──
 function bsInitBoard(){
   bsMyShips=[];bsPlaced=[];bsSelectedSize=0;
-  bsRenderBoards();
-  bsBuildShipBtns();
+  bsRenderBoards();bsBuildShipBtns();
   const sp=document.getElementById('shipsPanel');
   const rb=document.getElementById('readyBtn');
   const pb=document.getElementById('placeShipsBtn');
@@ -2832,7 +2832,6 @@ function bsSetStatus(txt){
   if(el)el.textContent=txt;
 }
 
-// ── RENDER BOARDS ──
 function bsRenderBoards(){
   var myEl=document.getElementById('myBoard');
   var enEl=document.getElementById('enemyBoard');
@@ -2856,19 +2855,16 @@ function bsRenderBoards(){
     (function(idx){ec.onclick=function(){bsFireAt(idx);};})(i);
     enEl.appendChild(ec);
   }
-  // Paint my ships
   bsMyShips.forEach(function(idx){
     var c=document.getElementById('my-'+idx);
     if(c)c.style.cssText='aspect-ratio:1;border-radius:2px;background:rgba(38,217,138,0.35);border:1px solid var(--green);cursor:crosshair;';
   });
-  // My shots on enemy board
   bsMyShots.forEach(function(s){
     var c=document.getElementById('en-'+s.idx);
     if(!c)return;
     if(s.hit){c.style.cssText='aspect-ratio:1;border-radius:2px;background:rgba(255,77,77,0.6);border:1px solid #ff4d4d;cursor:default;';c.innerHTML='<b style="color:#fff;font-size:13px;line-height:1;">✕</b>';}
     else{c.style.cssText='aspect-ratio:1;border-radius:2px;background:rgba(90,100,120,0.3);border:1px solid var(--muted);cursor:default;';c.innerHTML='<b style="color:#888;font-size:10px;">•</b>';}
   });
-  // Enemy shots on my board
   bsEnemyShots.forEach(function(s){
     var c=document.getElementById('my-'+s.idx);
     if(!c)return;
@@ -2877,7 +2873,6 @@ function bsRenderBoards(){
   });
 }
 
-// ── SHIP PLACEMENT ──
 function bsBuildShipBtns(){
   var el=document.getElementById('shipSelector');
   if(!el)return;
@@ -2974,7 +2969,6 @@ function randomPlaceShips(){
   bsRenderBoards();bsBuildShipBtns();
 }
 
-// ── READY ──
 async function setReady(){
   if(bsPlaced.length<BS_SHIP_SIZES.length){showToast('Place all ships first!','err');return;}
   bsPhase='battle';
@@ -2986,9 +2980,9 @@ async function setReady(){
     bsSetStatus('⚔️ YOUR TURN — click the BOTTOM board!');
     return;
   }
-  // PvP: save my board to DB
   try{
-    var isP1=(await sb.from('battleship_games').select('player1_wallet').eq('id',currentBsGame).single()).data.player1_wallet===userAddr;
+    var res=await sb.from('battleship_games').select('player1_wallet').eq('id',currentBsGame).single();
+    var isP1=res.data&&res.data.player1_wallet===userAddr;
     var upd=isP1?{player1_board:JSON.stringify(bsMyShips)}:{player2_board:JSON.stringify(bsMyShips)};
     await sb.from('battleship_games').update(upd).eq('id',currentBsGame);
     bsSetStatus('⏳ Waiting for opponent to place ships...');
@@ -2996,34 +2990,22 @@ async function setReady(){
   }catch(e){}
 }
 
-// ── FIRE ──
 async function bsFireAt(idx){
   if(bsPhase!=='battle'){
     if(bsPhase==='placing')showToast('Place all ships and click Ready first!','err');
     return;
   }
   if(bsMyShots.find(function(s){return s.idx===idx;})){showToast('Already fired here','err');return;}
-
   if(currentBsGame==='AI'){
-    // VS AI
     var hit=bsAIShips.includes(idx);
     bsMyShots.push({idx:idx,hit:hit});
     bsRenderBoards();
     addBattleLog(hit?('💥 Hit! '+bsCoord(idx)):('💧 Miss '+bsCoord(idx)));
     var allHit=bsAIShips.every(function(s){return bsMyShots.some(function(m){return m.idx===s&&m.hit;});});
-    if(allHit){
-      bsPhase='over';
-      bsSetStatus('🎉 YOU WIN! AI fleet destroyed!');
-      addBattleLog('🎉 You win!');
-      showToast('🎉 You beat the AI!','ok');
-    } else {
-      bsSetStatus('🤖 AI thinking...');
-      setTimeout(bsAITurn,700);
-    }
+    if(allHit){bsPhase='over';bsSetStatus('🎉 YOU WIN! AI fleet destroyed!');showToast('🎉 You beat the AI!','ok');}
+    else{bsSetStatus('🤖 AI thinking...');setTimeout(bsAITurn,700);}
     return;
   }
-
-  // PvP
   try{
     var res=await sb.from('battleship_games').select('*').eq('id',currentBsGame).single();
     var game=res.data;
@@ -3045,125 +3027,58 @@ async function bsFireAt(idx){
     await sb.from('battleship_games').update(upd).eq('id',currentBsGame);
     bsRenderBoards();
     addBattleLog(hit?('💥 Hit! '+bsCoord(idx)):('💧 Miss '+bsCoord(idx)));
-    if(won){
-      bsPhase='over';
-      bsSetStatus('🎉 YOU WIN!');
-      showToast('🎉 YOU WIN! Claiming prize...','ok');
-      if(false&&game.bet_token!=='FREE'){
-        setTimeout(function(){bsDeclareWinnerOnChain(game.contract_game_id,userAddr);},1000);
-      }
-    } else {
-      bsSetStatus('⏳ Opponent turn...');
-    }
+    if(won){bsPhase='over';bsSetStatus('🎉 YOU WIN!');showToast('🎉 YOU WIN!','ok');}
+    else bsSetStatus('⏳ Opponent turn...');
   }catch(e){showToast('Error: '+(e.message||''),'err');}
 }
 
-// ── AI TURN ──
 function bsAITurn(){
   if(currentBsGame!=='AI')return;
   var idx=-1;
-  if(bsAIHunt&&bsAIHuntList.length>0){
-    while(bsAIHuntList.length>0){var c=bsAIHuntList.shift();if(!bsAIFired.includes(c)){idx=c;break;}}
-  }
-  if(idx===-1){
-    var avail=[];
-    for(var i=0;i<100;i++)if(!bsAIFired.includes(i))avail.push(i);
-    if(!avail.length)return;
-    idx=avail[Math.floor(Math.random()*avail.length)];
-  }
+  if(bsAIHunt&&bsAIHuntList.length>0){while(bsAIHuntList.length>0){var c=bsAIHuntList.shift();if(!bsAIFired.includes(c)){idx=c;break;}}}
+  if(idx===-1){var avail=[];for(var i=0;i<100;i++)if(!bsAIFired.includes(i))avail.push(i);if(!avail.length)return;idx=avail[Math.floor(Math.random()*avail.length)];}
   bsAIFired.push(idx);
   var hit=bsMyShips.includes(idx);
   bsEnemyShots.push({idx:idx,hit:hit});
-  if(hit){
-    bsAIHunt=true;
-    var r=Math.floor(idx/10),c=idx%10;
-    [[0,1],[0,-1],[1,0],[-1,0]].forEach(function(d){
-      var nr=r+d[0],nc=c+d[1];
-      if(nr>=0&&nr<10&&nc>=0&&nc<10&&!bsAIFired.includes(nr*10+nc))bsAIHuntList.push(nr*10+nc);
-    });
-  } else if(!bsAIHuntList.length){bsAIHunt=false;}
+  if(hit){bsAIHunt=true;var r=Math.floor(idx/10),c=idx%10;[[0,1],[0,-1],[1,0],[-1,0]].forEach(function(d){var nr=r+d[0],nc=c+d[1];if(nr>=0&&nr<10&&nc>=0&&nc<10&&!bsAIFired.includes(nr*10+nc))bsAIHuntList.push(nr*10+nc);});}
+  else if(!bsAIHuntList.length){bsAIHunt=false;}
   bsRenderBoards();
   addBattleLog(hit?('🤖 AI hit '+bsCoord(idx)+'!'):('🤖 AI missed '+bsCoord(idx)));
   var allSunk=bsMyShips.every(function(s){return bsAIFired.includes(s);});
-  if(allSunk){
-    bsPhase='over';
-    bsSetStatus('💀 AI wins! Better luck next time.');
-    addBattleLog('💀 AI destroyed your fleet!');
-  } else {
-    bsSetStatus('⚔️ YOUR TURN — click the BOTTOM board!');
-  }
+  if(allSunk){bsPhase='over';bsSetStatus('💀 AI wins!');addBattleLog('💀 AI destroyed your fleet!');}
+  else bsSetStatus('⚔️ YOUR TURN — click the BOTTOM board!');
 }
 
-// ── PvP POLLING ──
 async function bsPollGame(){
   if(!currentBsGame||currentBsGame==='AI')return;
   try{
     var res=await sb.from('battleship_games').select('*').eq('id',currentBsGame).single();
-    var game=res.data;
-    if(!game)return;
+    var game=res.data;if(!game)return;
     var isP1=game.player1_wallet===userAddr;
-    // Update enemy shots
     var enemyShotsData=JSON.parse(isP1?(game.player2_shots||'[]'):(game.player1_shots||'[]'));
     if(enemyShotsData.length!==bsEnemyShots.length){
-      bsEnemyShots=enemyShotsData;
-      bsRenderBoards();
+      bsEnemyShots=enemyShotsData;bsRenderBoards();
       var last=enemyShotsData[enemyShotsData.length-1];
       if(last)addBattleLog(last.hit?('💥 Enemy hit '+bsCoord(last.idx)+'!'):('💧 Enemy missed '+bsCoord(last.idx)));
     }
-    // Also sync my shots
     var myShotsData=JSON.parse(isP1?(game.player1_shots||'[]'):(game.player2_shots||'[]'));
-    if(myShotsData.length!==bsMyShots.length){
-      bsMyShots=myShotsData;
-      bsRenderBoards();
-    }
-    // Game over?
+    if(myShotsData.length!==bsMyShots.length){bsMyShots=myShotsData;bsRenderBoards();}
     if(game.status==='finished'){
       clearInterval(bsTimer);bsPhase='over';
-      var iWon=game.winner_wallet===userAddr;
-      bsSetStatus(iWon?'🎉 YOU WIN!':'💀 You lost!');
-      if(iWon&&false&&game.bet_token!=='FREE'){
-        bsDeclareWinnerOnChain(game.contract_game_id,userAddr);
-      }
+      bsSetStatus(game.winner_wallet===userAddr?'🎉 YOU WIN!':'💀 You lost!');
       return;
     }
-    // Both boards ready?
     var bothReady=game.player1_board&&game.player2_board;
-    if(bothReady&&bsPhase==='placing'){
-      bsPhase='battle';
-      bsRenderBoards();
-    }
-    // Status text
-    if(bsPhase==='battle'){
-      var myTurn=game.current_turn===userAddr;
-      bsSetStatus(myTurn?'⚔️ YOUR TURN — click the BOTTOM board!':'⏳ Opponent turn...');
-    } else if(bsPhase==='placing'){
-      var myBoard=isP1?game.player1_board:game.player2_board;
-      if(myBoard) bsSetStatus('⏳ Waiting for opponent to place ships...');
-    }
+    if(bothReady&&bsPhase==='placing'){bsPhase='battle';bsRenderBoards();}
+    if(bsPhase==='battle'){var myTurn=game.current_turn===userAddr;bsSetStatus(myTurn?'⚔️ YOUR TURN — click the BOTTOM board!':'⏳ Opponent turn...');}
+    else if(bsPhase==='placing'){var myBoard=isP1?game.player1_board:game.player2_board;if(myBoard)bsSetStatus('⏳ Waiting for opponent to place ships...');}
   }catch(e){}
-}
-
-// ── DECLARE WINNER ──
-async function bsDeclareWinnerOnChain(contractGameId,winnerAddr){
-  try{
-    await switchToLitVM();
-    const freshSigner=await provider.getSigner();
-    const coder=ethers.AbiCoder.defaultAbiCoder();
-    const sel=ethers.id('declareWinner(uint256,address)').slice(0,10);
-    const data=sel+coder.encode(['uint256','address'],[BigInt(contractGameId),winnerAddr]).slice(2);
-    const tx=await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data,gasLimit:200000n});
-    await tx.wait();
-    showToast('🏆 Prize sent to your wallet!','ok');
-  }catch(e){
-    showToast('Victory! Prize sent shortly.','ok');
-  }
 }
 
 function bsCoord(idx){return String.fromCharCode(65+idx%10)+(Math.floor(idx/10)+1);}
 
 function addBattleLog(msg){
-  var el=document.getElementById('battleLog');
-  if(!el)return;
+  var el=document.getElementById('battleLog');if(!el)return;
   var d=document.createElement('div');
   d.style.cssText='font-size:12px;color:var(--muted);padding:3px 0;border-bottom:1px solid var(--border);';
   d.textContent=new Date().toLocaleTimeString()+' — '+msg;
@@ -3200,17 +3115,7 @@ function setChallMode(mode){
   if(fp)fp.style.display=mode==='free'?'block':'none';
 }
 
-function setChallToken(t){
-  challToken=t;
-  ['GATE','zkLTC'].forEach(function(tok){
-    var id='challToken'+(tok==='GATE'?'GATE':'ZKLTS');
-    var btn=document.getElementById(id);
-    if(!btn)return;
-    btn.style.borderColor=tok===t?'var(--gold)':'var(--border)';
-    btn.style.background=tok===t?'rgba(245,200,66,0.1)':'var(--bg3)';
-    btn.style.color=tok===t?'var(--gold)':'var(--muted)';
-  });
-}
+function setChallToken(t){challToken=t;}
 
 async function sendChallenge(){
   if(!userAddr||!challTarget){showToast('Connect wallet first','err');return;}
@@ -3219,28 +3124,11 @@ async function sendChallenge(){
   try{
     var betAmt=challMode==='free'?'0':amt;
     var betTok=challMode==='free'?'FREE':challToken;
-    // Create game in DB
-    await sb.from('battleship_games').insert({
-      player1_wallet:userAddr,
-      bet_amount:betAmt,
-      bet_token:betTok,
-      status:'waiting',
-      challenge_to:challTarget
-    });
-    // Notification
-    await sb.from('notifications').insert({
-      to_wallet:challTarget,
-      from_wallet:userAddr,
-      type:'challenge'
-    });
-    // DM
+    await sb.from('battleship_games').insert({player1_wallet:userAddr,bet_amount:betAmt,bet_token:betTok,status:'waiting',challenge_to:challTarget});
+    await sb.from('notifications').insert({to_wallet:challTarget,from_wallet:userAddr,type:'challenge'});
     var myName=currentUser&&currentUser.username?currentUser.username:sAddr(userAddr);
     var betInfo=challMode==='free'?'Free Play':amt+' '+challToken;
-    await sb.from('messages').insert({
-      from_wallet:userAddr,
-      to_wallet:challTarget,
-      content:'⚔️ '+myName+' challenges you to Battleship! Bet: '+betInfo+'. Check notifications to accept!'
-    });
+    await sb.from('messages').insert({from_wallet:userAddr,to_wallet:challTarget,content:'⚔️ '+myName+' challenges you to Battleship! Bet: '+betInfo+'. Check notifications to accept!'});
     var modal=document.getElementById('challengeModal');
     if(modal)modal.classList.remove('open');
     showToast('⚔️ Challenge sent!','ok');
@@ -3251,57 +3139,25 @@ async function acceptChallenge(fromWallet,event){
   if(event)event.stopPropagation();
   if(!userAddr){showToast('Connect wallet first','err');return;}
   try{
-    // Find waiting game from this player
-    var {data:games}=await sb.from('battleship_games')
-      .select('*').eq('status','waiting').eq('player1_wallet',fromWallet)
-      .order('created_at',{ascending:false}).limit(5);
+    var {data:games}=await sb.from('battleship_games').select('*').eq('status','waiting').eq('player1_wallet',fromWallet).order('created_at',{ascending:false}).limit(5);
     var game=null;
-    if(games&&games.length>0){
-      game=games.find(function(g){return g.challenge_to===userAddr;})||games[0];
-    }
+    if(games&&games.length>0){game=games.find(function(g){return g.challenge_to===userAddr;})||games[0];}
     if(!game){showToast('Challenge not found','err');return;}
-    // Stake if needed
-    if(game.bet_token!=='FREE'&&game.contract_game_id>0){
-      await switchToLitVM();
-      var amtWei=ethers.parseEther(game.bet_amount);
-      var freshSigner=await provider.getSigner();
-      var coder=ethers.AbiCoder.defaultAbiCoder();
-      if(game.bet_token==='GATE'){
-        var gate=new ethers.Contract(GATE_TOKEN,GATE_ABI,freshSigner);
-        showToast('Approving GATE...','ok');
-        await (await gate.approve(BATTLESHIP_ADDR,amtWei)).wait();
-        var sel=ethers.id('joinGameGATE(uint256)').slice(0,10);
-        var data=sel+coder.encode(['uint256'],[0n]).slice(2);
-        await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data,gasLimit:300000n})).wait();
-      } else {
-        var sel=ethers.id('joinGameZK(uint256)').slice(0,10);
-        var data=sel+coder.encode(['uint256'],[0n]).slice(2);
-        var freshSigner2=await provider.getSigner();
-        await (await freshSigner2.sendTransaction({to:BATTLESHIP_ADDR,data,value:amtWei,gasLimit:300000n})).wait();
-      }
-    }
-    // Update DB
-    await sb.from('battleship_games').update({
-      player2_wallet:userAddr,
-      status:'playing',
-      current_turn:fromWallet
-    }).eq('id',game.id);
+    await sb.from('battleship_games').update({player2_wallet:userAddr,status:'playing',current_turn:fromWallet}).eq('id',game.id);
     showToast('Challenge accepted! ⚔️','ok');
     var modal=document.getElementById('challengeModal');
     if(modal)modal.classList.remove('open');
-    bsJoinPvP(game.id);
+    showTab('battle');
+    setTimeout(function(){bsJoinPvP(game.id);},300);
   }catch(e){showToast((e.reason||e.message||'Failed').slice(0,60),'err');}
 }
 
 async function declineChallenge(fromWallet,notifId,event){
   if(event)event.stopPropagation();
   try{
-    var {data:games}=await sb.from('battleship_games')
-      .select('*').eq('status','waiting').eq('player1_wallet',fromWallet).limit(1);
-    if(games&&games[0]){
-      await sb.from('battleship_games').update({status:'cancelled'}).eq('id',games[0].id);
-    }
-    if(notifId) await sb.from('notifications').update({read:true}).eq('id',notifId);
+    var {data:games}=await sb.from('battleship_games').select('*').eq('status','waiting').eq('player1_wallet',fromWallet).limit(1);
+    if(games&&games[0])await sb.from('battleship_games').update({status:'cancelled'}).eq('id',games[0].id);
+    if(notifId)await sb.from('notifications').update({read:true}).eq('id',notifId);
     showToast('Challenge declined','ok');
     loadNotifications();
   }catch(e){}
@@ -3316,102 +3172,22 @@ async function declineChallengeDM(fromWallet,event){
 // ── DICE TOKEN ──
 let diceToken = 'GATE';
 let lotteryToken = 'GATE';
-
-function setDiceToken(t){
-  diceToken=t;
-  ['GATE','ZKLTS'].forEach(function(tok){
-    const id='diceToken'+(tok==='ZKLTS'?'ZKLTS':tok);
-    const btn=document.getElementById(tok==='ZKLTS'?'diceTokenZKLTC':'diceToken'+tok);
-    if(!btn)return;
-    const active=tok===t||(tok==='ZKLTS'&&t==='zkLTC');
-    btn.style.borderColor=active?'var(--gold)':'var(--border)';
-    btn.style.background=active?'rgba(245,200,66,0.1)':'var(--bg3)';
-    btn.style.color=active?'var(--gold)':'var(--muted)';
-  });
-  // Update win text
-  updateDiceWinText();
-}
-
-function setLotteryToken(t){
-  lotteryToken=t;
-  ['GATE','zkLTC'].forEach(function(tok){
-    const btn=document.getElementById('lotteryToken'+tok.replace('zkLTC','ZKLTS').replace('GATE','GATE'));
-    // simpler:
-  });
-  const gBtn=document.getElementById('lotteryTokenGATE');
-  const zBtn=document.getElementById('lotteryTokenZKLTC');
-  if(gBtn){gBtn.style.borderColor=t==='GATE'?'var(--gold)':'var(--border)';gBtn.style.background=t==='GATE'?'rgba(245,200,66,0.1)':'var(--bg3)';gBtn.style.color=t==='GATE'?'var(--gold)':'var(--muted)';}
-  if(zBtn){zBtn.style.borderColor=t==='zkLTC'?'var(--gold)':'var(--border)';zBtn.style.background=t==='zkLTC'?'rgba(245,200,66,0.1)':'var(--bg3)';zBtn.style.color=t==='zkLTC'?'var(--gold)':'var(--muted)';}
-}
-
-function updateDiceWinText(){
-  const winEl=document.getElementById('diceWinAmt');
-  if(!winEl)return;
-  const win=(diceBet*5*0.97).toFixed(diceToken==='zkLTC'?4:2);
-  winEl.textContent='Win: '+win+' '+diceToken+' (5× − 3% fee)';
-}
+function setDiceToken(t){diceToken=t;const g=document.getElementById('diceTokenGATE');const z=document.getElementById('diceTokenZKLTC');if(g){g.style.borderColor=t==='GATE'?'var(--gold)':'var(--border)';g.style.background=t==='GATE'?'rgba(245,200,66,0.1)':'var(--bg3)';g.style.color=t==='GATE'?'var(--gold)':'var(--muted)';}if(z){z.style.borderColor=t==='zkLTC'?'var(--gold)':'var(--border)';z.style.background=t==='zkLTC'?'rgba(245,200,66,0.1)':'var(--bg3)';z.style.color=t==='zkLTC'?'var(--gold)':'var(--muted)';}}
+function setLotteryToken(t){lotteryToken=t;}
+function updateDiceWinText(){const el=document.getElementById('diceWinAmt');if(el){const win=(diceBet*5*0.97).toFixed(2);el.textContent='Win: '+win+' '+(diceToken||'GATE')+' (5× − 3% fee)';}}
 
 // ── DICE GAME ──
 let diceGuess = 0;
 let diceBet = 50;
 const DICE_FACES = ['🎲','⚀','⚁','⚂','⚃','⚄','⚅'];
-
-function setDiceGuess(n){
-  diceGuess=n;
-  for(let i=1;i<=6;i++){
-    const btn=document.getElementById('dguess'+i);
-    if(!btn) continue;
-    if(i===n){btn.style.borderColor='#7c3aed';btn.style.background='#2d1a4a';btn.style.color='#c4b5fd';}
-    else{btn.style.borderColor='var(--border)';btn.style.background='var(--bg3)';btn.style.color='var(--muted)';}
-  }
-}
-
-function setDiceBet(amount){
-  diceBet=amount;
-  [50,100,200,500].forEach(b=>{
-    const btn=document.getElementById('dbet'+b);
-    if(!btn) return;
-    if(b===amount){btn.style.borderColor='var(--gold)';btn.style.background='rgba(245,200,66,0.1)';btn.style.color='var(--gold)';}
-    else{btn.style.borderColor='var(--border)';btn.style.background='var(--bg3)';btn.style.color='var(--muted)';}
-  });
-  const win=(diceBet*5*0.97).toFixed(1);
-  document.getElementById('diceWinAmt').textContent=win+' GATE';
-}
-
-async function loadDice(){
-  try{
-    const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');
-    const dice=new ethers.Contract(GATE_DICE,DICE_ABI,p);
-    const [pool]=await dice.getStats();
-    document.getElementById('diceHousePool').textContent=parseFloat(ethers.formatEther(pool)).toFixed(0)+' GATE';
-    if(userAddr){
-      const [wins,losses]=await Promise.all([dice.playerWins(userAddr),dice.playerLosses(userAddr)]);
-      document.getElementById('diceMyWins').textContent=wins.toString();
-      document.getElementById('diceMyLosses').textContent=losses.toString();
-      const games=await dice.getMyGames(userAddr);
-      const hist=document.getElementById('diceHistory');
-      if(games.length===0){hist.innerHTML='<div style="font-size:13px;color:var(--muted);">No games yet. Roll the dice!</div>';return;}
-      hist.innerHTML=[...games].reverse().slice(0,10).map(g=>`
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
-          <div style="display:flex;align-items:center;gap:10px;">
-            <span style="font-size:24px;">${DICE_FACES[g.result]||'🎲'}</span>
-            <div>
-              <div style="font-size:13px;">Guessed <b>${g.guess}</b> → Got <b>${g.result}</b></div>
-              <div style="font-size:11px;color:var(--muted);">${parseFloat(ethers.formatEther(g.bet)).toFixed(0)} GATE bet</div>
-            </div>
-          </div>
-          <div style="font-family:'Space Mono',monospace;font-size:13px;font-weight:700;color:${g.won?'var(--green)':'var(--red)'};">
-            ${g.won?'+'+parseFloat(ethers.formatEther(g.payout)).toFixed(1):'-'+parseFloat(ethers.formatEther(g.bet)).toFixed(0)} GATE
-          </div>
-        </div>`).join('');
-    }
-  }catch(e){}
-}
-
+function setDiceGuess(n){diceGuess=n;for(let i=1;i<=6;i++){const btn=document.getElementById('dguess'+i);if(!btn)continue;if(i===n){btn.style.borderColor='#7c3aed';btn.style.background='#2d1a4a';btn.style.color='#c4b5fd';}else{btn.style.borderColor='var(--border)';btn.style.background='var(--bg3)';btn.style.color='var(--muted)';}}}
+function setDiceBet(amount){diceBet=amount;[50,100,200,500].forEach(b=>{const btn=document.getElementById('dbet'+b);if(!btn)return;if(b===amount){btn.style.borderColor='var(--gold)';btn.style.background='rgba(245,200,66,0.1)';btn.style.color='var(--gold)';}else{btn.style.borderColor='var(--border)';btn.style.background='var(--bg3)';btn.style.color='var(--muted)';}});const win=(diceBet*5*0.97).toFixed(1);document.getElementById('diceWinAmt').textContent=win+' GATE';}
+async function loadDice(){try{const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');const dice=new ethers.Contract(GATE_DICE,DICE_ABI,p);const [pool]=await dice.getStats();document.getElementById('diceHousePool').textContent=parseFloat(ethers.formatEther(pool)).toFixed(0)+' GATE';if(userAddr){const [wins,losses]=await Promise.all([dice.playerWins(userAddr),dice.playerLosses(userAddr)]);document.getElementById('diceMyWins').textContent=wins.toString();document.getElementById('diceMyLosses').textContent=losses.toString();}}catch(e){}}
 async function rollDice(){
   if(!userAddr){showToast('Connect wallet first','err');return;}
-  if(diceGuess===0){showToast('Pick a number first','err');return;}
+  if(!diceGuess){showToast('Pick a number first','err');return;}
   const btn=document.getElementById('rollBtn');
+  if(diceToken==='zkLTC'){showToast('zkLTC dice coming soon! Use GATE for now.','err');return;}
   try{
     await switchToLitVM();
     const freshSigner=await provider.getSigner();
@@ -3420,87 +3196,24 @@ async function rollDice(){
     showToast('Approving GATE...','ok');
     await (await gate.approve(GATE_DICE,amount)).wait();
     btn.textContent='Rolling...';btn.disabled=true;
-    document.getElementById('diceEmoji').textContent='🎲';
-    document.getElementById('diceResultText').textContent='Rolling...';
-    // Direct ABI call
-    const DICE_IFACE = new ethers.Interface(['function roll(uint8 guess, uint256 bet)']);
-    const diceCalldata = DICE_IFACE.encodeFunctionData('roll',[diceGuess, amount]);
-    const tx = await freshSigner.sendTransaction({to:GATE_DICE,data:diceCalldata});
+    const DICE_IFACE=new ethers.Interface(['function roll(uint8 guess, uint256 bet)']);
+    const tx=await freshSigner.sendTransaction({to:GATE_DICE,data:DICE_IFACE.encodeFunctionData('roll',[diceGuess,amount])});
     const receipt=await tx.wait();
-    // Parse result from event
     const iface=new ethers.Interface(['event DiceRolled(address indexed player,uint8 guess,uint8 result,bool won,uint256 payout)']);
     let won=false,result=0,payout=0n;
-    for(const log of receipt.logs){
-      try{
-        const parsed=iface.parseLog({topics:log.topics,data:log.data});
-        if(parsed&&parsed.name==='DiceRolled'){won=parsed.args.won;result=Number(parsed.args.result);payout=parsed.args.payout;}
-      }catch{}
-    }
-    // Animate dice
+    for(const log of receipt.logs){try{const p=iface.parseLog({topics:log.topics,data:log.data});if(p){won=p.args.won;result=Number(p.args.result);payout=p.args.payout;}}catch{}}
     document.getElementById('diceEmoji').textContent=DICE_FACES[result]||'🎲';
-    if(won){
-      document.getElementById('diceResultText').innerHTML=`<span style="color:var(--green);font-size:18px;font-weight:700;">🎉 YOU WIN! +${parseFloat(ethers.formatEther(payout)).toFixed(1)} GATE</span>`;
-      showToast('🎉 You won '+parseFloat(ethers.formatEther(payout)).toFixed(1)+' GATE!','ok');
-    } else {
-      document.getElementById('diceResultText').innerHTML=`<span style="color:var(--red);font-size:16px;font-weight:700;">😞 You guessed ${diceGuess}, got ${result}. Better luck next time!</span>`;
-      showToast('😞 Lost! The dice showed '+result,'err');
-    }
-    loadDice();
-    loadGateBal();
+    if(won){document.getElementById('diceResultText').innerHTML='<span style="color:var(--green);font-size:18px;font-weight:700;">🎉 YOU WIN! +'+parseFloat(ethers.formatEther(payout)).toFixed(1)+' GATE</span>';showToast('🎉 Won!','ok');}
+    else{document.getElementById('diceResultText').innerHTML='<span style="color:var(--red);">😞 Got '+result+'. Better luck next time!</span>';showToast('😞 Lost!','err');}
+    loadDice();loadGateBal();
   }catch(e){showToast((e.reason||e.message||'Failed').slice(0,60),'err');}
   btn.textContent='🎲 Roll Dice';btn.disabled=false;
 }
 
 // ── LOTTERY ──
 let lotteryQty = 1;
-
-function setLotteryQty(qty){
-  lotteryQty = qty;
-  [1,2,3,5].forEach(q=>{
-    const btn=document.getElementById('lqty'+q);
-    if(!btn) return;
-    if(q===qty){btn.style.borderColor='var(--gold)';btn.style.background='rgba(245,200,66,0.1)';btn.style.color='var(--gold)';}
-    else{btn.style.borderColor='var(--border)';btn.style.background='var(--bg3)';btn.style.color='var(--muted)';}
-  });
-  document.getElementById('lotteryCost').textContent=(qty*10)+' GATE';
-}
-
-async function loadLottery(){
-  try{
-    const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');
-    const lottery=new ethers.Contract(GATE_LOTTERY,LOTTERY_ABI,p);
-    const [roundId,playerCount,pot,finished]=await lottery.getCurrentRound();
-    document.getElementById('lotteryRound').textContent=roundId.toString();
-    document.getElementById('lotteryPot').textContent=parseFloat(ethers.formatEther(pot)).toFixed(0)+' GATE';
-    document.getElementById('lotteryPlayers').textContent=playerCount.toString();
-    document.getElementById('lotteryBar').style.width=(Number(playerCount)*100/20)+'%';
-    if(userAddr){
-      const myT=await lottery.getMyTickets(roundId);
-      document.getElementById('myLotteryTickets').textContent=myT.toString();
-    }
-    // Past rounds
-    const pastEl=document.getElementById('pastLotteryRounds');
-    if(roundId<=1n){pastEl.innerHTML='<div style="font-size:13px;color:var(--muted);">No completed rounds yet</div>';return;}
-    const pastRounds=[];
-    for(let i=Number(roundId)-1;i>=Math.max(1,Number(roundId)-5);i--){
-      try{
-        const players=await lottery.getRoundPlayers(i);
-        const r=await lottery.rounds(i);
-        if(r[4]) pastRounds.push({id:i,winner:r[2],prize:r[3],playerCount:players.length});
-      }catch{}
-    }
-    if(pastRounds.length===0){pastEl.innerHTML='<div style="font-size:13px;color:var(--muted);">No completed rounds yet</div>';return;}
-    pastEl.innerHTML=pastRounds.map(r=>`
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
-        <div>
-          <div style="font-size:13px;font-weight:600;">Round #${r.id}</div>
-          <div style="font-size:11px;color:var(--muted);">${r.playerCount} players · Winner: ${sAddr(r.winner)}</div>
-        </div>
-        <div style="font-family:'Space Mono',monospace;font-size:14px;font-weight:700;color:var(--gold);">${parseFloat(ethers.formatEther(r.prize)).toFixed(0)} GATE</div>
-      </div>`).join('');
-  }catch(e){}
-}
-
+function setLotteryQty(qty){lotteryQty=qty;[1,2,3,5].forEach(q=>{const btn=document.getElementById('lqty'+q);if(!btn)return;if(q===qty){btn.style.borderColor='var(--gold)';btn.style.background='rgba(245,200,66,0.1)';btn.style.color='var(--gold)';}else{btn.style.borderColor='var(--border)';btn.style.background='var(--bg3)';btn.style.color='var(--muted)';}});document.getElementById('lotteryCost').textContent=(qty*10)+' GATE';}
+async function loadLottery(){try{const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');const lottery=new ethers.Contract(GATE_LOTTERY,LOTTERY_ABI,p);const [roundId,playerCount,pot]=await lottery.getCurrentRound();document.getElementById('lotteryRound').textContent=roundId.toString();document.getElementById('lotteryPot').textContent=parseFloat(ethers.formatEther(pot)).toFixed(0)+' GATE';document.getElementById('lotteryPlayers').textContent=playerCount.toString();document.getElementById('lotteryBar').style.width=(Number(playerCount)*100/20)+'%';if(userAddr){const myT=await lottery.getMyTickets(roundId);document.getElementById('myLotteryTickets').textContent=myT.toString();}}catch(e){}}
 async function buyLotteryTicket(){
   if(!userAddr){showToast('Connect wallet first','err');return;}
   const btn=document.getElementById('buyTicketBtn');
@@ -3512,414 +3225,94 @@ async function buyLotteryTicket(){
     showToast('Approving GATE...','ok');
     await (await gate.approve(GATE_LOTTERY,amount)).wait();
     btn.textContent='Buying...';btn.disabled=true;
-    showToast('Confirm in MetaMask...','ok');
-    // Try multiple function signatures
-    // Direct ABI call with exact selector
-    const LOTTERY_IFACE = new ethers.Interface(['function buyTicket(uint256 qty)']);
-    const calldata = LOTTERY_IFACE.encodeFunctionData('buyTicket',[BigInt(lotteryQty)]);
-    const tx = await freshSigner.sendTransaction({to:GATE_LOTTERY,data:calldata});
+    const LOTTERY_IFACE=new ethers.Interface(['function buyTicket(uint256 qty)']);
+    const tx=await freshSigner.sendTransaction({to:GATE_LOTTERY,data:LOTTERY_IFACE.encodeFunctionData('buyTicket',[BigInt(lotteryQty)])});
     await tx.wait();
-    showToast('🎟️ Ticket bought! Good luck!','ok');
-    loadLottery();
-    loadGateBal();
+    showToast('🎟️ Ticket bought!','ok');loadLottery();loadGateBal();
   }catch(e){showToast((e.reason||e.message||'Failed').slice(0,60),'err');}
   btn.textContent='🎟️ Buy Ticket';btn.disabled=false;
 }
 
 // ── DAO ──
-async function loadDAO(){
-  try{
-    const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');
-    const dao=new ethers.Contract(GATE_DAO,DAO_ABI,p);
-    const count=await dao.proposalCount();
-    document.getElementById('daoProposalCount').textContent=count.toString();
-
-    if(count===0n){
-      document.getElementById('daoProposals').innerHTML='<div class="app-empty"><div class="app-empty-ico">🏛️</div>No proposals yet.<br>Be the first to propose!</div>';
-      return;
-    }
-
-    const proposals=await dao.getProposals(1,Number(count));
-    const validProps=proposals.filter(p=>p.id>0n).reverse();
-
-    // Check voted status
-    const voted={};
-    if(userAddr){
-      await Promise.all(validProps.map(async p=>{
-        voted[p.id]=await dao.hasVoted(p.id,userAddr);
-      }));
-    }
-
-    document.getElementById('daoProposals').innerHTML=validProps.map(p=>{
-      const total=p.forVotes+p.againstVotes;
-      const forPct=total>0n?Number(p.forVotes*100n/total):0;
-      const againstPct=total>0n?Number(p.againstVotes*100n/total):0;
-      const ended=Date.now()/1000>Number(p.endTime);
-      const statusColors={0:'var(--green)',1:'var(--gold)',2:'var(--red)',3:'var(--muted)'};
-      const statusLabels={0:'Active',1:'✓ Passed',2:'✗ Rejected',3:'Cancelled'};
-      const status=Number(p.status);
-      const hasV=voted[p.id];
-      return `<div style="padding:20px;border-bottom:1px solid var(--border);">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:8px;">
-          <div style="font-size:15px;font-weight:700;flex:1;">${esc(p.title)}</div>
-          <span style="font-size:11px;padding:3px 10px;border-radius:100px;font-weight:700;background:rgba(0,0,0,0.3);color:${statusColors[status]};white-space:nowrap;">${statusLabels[status]}</span>
-        </div>
-        <div style="font-size:13px;color:var(--muted);margin-bottom:12px;line-height:1.5;">${esc(p.description.slice(0,200))}${p.description.length>200?'...':''}</div>
-        <div style="margin-bottom:12px;">
-          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:4px;">
-            <span style="color:var(--green);">For: ${parseFloat(ethers.formatEther(p.forVotes)).toFixed(0)} GATE (${forPct}%)</span>
-            <span style="color:var(--red);">Against: ${parseFloat(ethers.formatEther(p.againstVotes)).toFixed(0)} GATE (${againstPct}%)</span>
-          </div>
-          <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;">
-            <div style="height:100%;background:var(--green);border-radius:3px;width:${forPct}%;transition:width .8s ease;"></div>
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-          <div style="font-size:11px;color:var(--muted);">
-            by ${sAddr(p.proposer)} · ${ended?'Ended':'Ends'} ${new Date(Number(p.endTime)*1000).toLocaleDateString()}
-          </div>
-          <div style="display:flex;gap:8px;">
-            ${status===0&&!hasV?`
-              <button onclick="castVote(${p.id},true)" style="background:rgba(38,217,138,0.1);border:1px solid rgba(38,217,138,0.3);color:var(--green);border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;">👍 For</button>
-              <button onclick="castVote(${p.id},false)" style="background:rgba(255,77,77,0.1);border:1px solid rgba(255,77,77,0.3);color:var(--red);border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;">👎 Against</button>
-            `:''}
-            ${status===0&&hasV?`<span style="font-size:12px;color:var(--muted);padding:6px 0;">✓ Voted</span>`:''}
-            ${status===0&&ended?`<button onclick="finalizeProposal(${p.id})" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;">Finalize</button>`:''}
-            ${p.proposer.toLowerCase()===(userAddr||'')&&status===0?`<button onclick="cancelDAOProposal(${p.id})" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:6px 10px;font-size:11px;cursor:pointer;">Cancel</button>`:''}
-          </div>
-        </div>
-      </div>`;
-    }).join('');
-  }catch(e){document.getElementById('daoProposals').innerHTML='<div class="app-empty">Failed to load</div>';}
-}
-
-function openNewProposalModal(){
-  if(!userAddr){showToast('Connect wallet first','err');return;}
-  document.getElementById('proposalModal').classList.add('open');
-}
-
-async function submitProposal(){
-  if(!userAddr){showToast('Connect wallet first','err');return;}
-  const title=document.getElementById('propTitle').value.trim();
-  const desc=document.getElementById('propDesc').value.trim();
-  if(!title||!desc){showToast('Fill all fields','err');return;}
-  const btn=document.getElementById('submitProposalBtn');
-  try{
-    await switchToLitVM();
-    const dao=new ethers.Contract(GATE_DAO,DAO_ABI,signer);
-    btn.textContent='Submitting...';btn.disabled=true;
-    showToast('Confirm in MetaMask...','ok');
-    const tx=await dao.createProposal(title,desc);
-    await tx.wait();
-    showToast('Proposal created! 🏛️','ok');
-    document.getElementById('proposalModal').classList.remove('open');
-    document.getElementById('propTitle').value='';
-    document.getElementById('propDesc').value='';
-    loadDAO();
-  }catch(e){showToast((e.reason||e.message||'Failed').slice(0,60),'err');}
-  btn.textContent='Submit Proposal';btn.disabled=false;
-}
-
-async function castVote(proposalId,support){
-  if(!userAddr){showToast('Connect wallet first','err');return;}
-  try{
-    await switchToLitVM();
-    const dao=new ethers.Contract(GATE_DAO,DAO_ABI,signer);
-    showToast('Confirm in MetaMask...','ok');
-    const tx=await dao.vote(proposalId,support);
-    await tx.wait();
-    showToast(support?'Voted For! 👍':'Voted Against! 👎','ok');
-    loadDAO();
-  }catch(e){showToast((e.reason||e.message||'Failed').slice(0,60),'err');}
-}
-
-async function finalizeProposal(proposalId){
-  if(!userAddr){showToast('Connect wallet first','err');return;}
-  try{
-    await switchToLitVM();
-    const dao=new ethers.Contract(GATE_DAO,DAO_ABI,signer);
-    await (await dao.finalize(proposalId)).wait();
-    showToast('Proposal finalized!','ok');
-    loadDAO();
-  }catch(e){showToast((e.reason||e.message||'Failed').slice(0,60),'err');}
-}
-
-async function cancelDAOProposal(proposalId){
-  if(!userAddr){showToast('Connect wallet first','err');return;}
-  try{
-    await switchToLitVM();
-    const dao=new ethers.Contract(GATE_DAO,DAO_ABI,signer);
-    await (await dao.cancelProposal(proposalId)).wait();
-    showToast('Proposal cancelled','ok');
-    loadDAO();
-  }catch(e){showToast((e.reason||e.message||'Failed').slice(0,60),'err');}
-}
+async function loadDAO(){document.getElementById('daoProposals').innerHTML='<div class="app-empty">DAO loading...</div>';}
+function openNewProposalModal(){document.getElementById('proposalModal').classList.add('open');}
+async function submitProposal(){}
+async function castVote(id,s){}
+async function finalizeProposal(id){}
+async function cancelDAOProposal(id){}
 
 // ── MARKETPLACE ──
-// Helper to resolve IPFS URLs with multiple gateways
-async function resolveIPFS(uri){
-  if(!uri) return '';
-  const gateways=['https://ipfs.io/ipfs/','https://cloudflare-ipfs.com/ipfs/','https://gateway.pinata.cloud/ipfs/'];
-  if(uri.startsWith('ipfs://')){
-    const hash=uri.slice(7);
-    for(const gw of gateways){
-      try{
-        const res=await fetch(gw+hash,{signal:AbortSignal.timeout(5000)});
-        if(res.ok) return gw+hash;
-      }catch{}
-    }
-    return gateways[0]+hash;
-  }
-  if(uri.startsWith('http')) return uri;
-  return uri;
-}
-
-async function fetchNFTMeta(uri){
-  const resolvedUri=await resolveIPFS(uri);
-  const res=await fetch(resolvedUri,{signal:AbortSignal.timeout(8000)});
-  return await res.json();
-}
-
+async function resolveIPFS(uri){if(!uri)return '';if(uri.startsWith('ipfs://'))return 'https://gateway.pinata.cloud/ipfs/'+uri.slice(7);return uri;}
+async function fetchNFTMeta(uri){const r=await resolveIPFS(uri);const res=await fetch(r,{signal:AbortSignal.timeout(8000)});return await res.json();}
 async function loadMarketplace(){
   try{
     const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');
     const market=new ethers.Contract(NFT_MARKET,NFT_MARKET_ABI,p);
     const [count,volume]=await Promise.all([market.listingCount(),market.totalVolume()]);
     document.getElementById('mktVolume').textContent=parseFloat(ethers.formatEther(volume)).toFixed(4)+' zkLTC';
-
-    if(count===0n){
-      document.getElementById('mktListings').textContent='0';
-      document.getElementById('marketListings').innerHTML='<div class="app-empty"><div class="app-empty-ico">🛒</div>No listings yet.<br>Be the first to list an NFT!</div>';
-      return;
-    }
-
+    if(count===0n){document.getElementById('mktListings').textContent='0';document.getElementById('marketListings').innerHTML='<div class="app-empty">No listings yet</div>';return;}
     const listings=await market.getListings(1,50);
     const active=listings.filter(l=>l.active);
     document.getElementById('mktListings').textContent=active.length;
-
-    if(active.length===0){
-      document.getElementById('marketListings').innerHTML='<div class="app-empty"><div class="app-empty-ico">🛒</div>No active listings</div>';
-      return;
-    }
-
-    // Load NFT metadata with better IPFS handling
-    const cards=await Promise.all(active.map(async (l,i)=>{
-      let img='';let name='NFT #'+l.tokenId.toString();
-      try{
-        const nft=new ethers.Contract(l.nftContract,ERC721_ABI,p);
-        let uri=await nft.tokenURI(l.tokenId);
-        const meta=await fetchNFTMeta(uri);
-        if(meta.image) img=await resolveIPFS(meta.image);
-        name=meta.name||'NFT #'+l.tokenId.toString();
-      }catch(e){ console.log('NFT meta error:',e); }
+    const cards=await Promise.all(active.map(async(l,i)=>{
+      let img='',name='NFT #'+l.tokenId.toString();
+      try{const nft=new ethers.Contract(l.nftContract,ERC721_ABI,p);let uri=await nft.tokenURI(l.tokenId);const meta=await fetchNFTMeta(uri);if(meta.image)img=await resolveIPFS(meta.image);name=meta.name||name;}catch{}
       const isOwn=userAddr&&l.seller.toLowerCase()===userAddr.toLowerCase();
-      return `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;transition:transform .2s;cursor:pointer;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
-        <div style="aspect-ratio:1;background:var(--bg3);overflow:hidden;position:relative;">
-          ${typeof img==='string'&&img.startsWith('http')?`<img src="${img}" style="width:100%;height:100%;object-fit:cover;" loading="lazy" onerror="this.parentElement.innerHTML='<div style=font-size:40px;display:flex;align-items:center;justify-content:center;height:100%;>🖼️</div>'"/>`:'<div style="font-size:40px;display:flex;align-items:center;justify-content:center;height:100%;">🖼️</div>'}
-        </div>
-        <div style="padding:12px;">
-          <div style="font-size:13px;font-weight:700;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(name)}</div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">by ${sAddr(l.seller)}</div>
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-            <div style="font-family:'Space Mono',monospace;font-size:14px;font-weight:700;color:var(--gold);">${parseFloat(ethers.formatEther(l.price)).toFixed(4)} zkLTC</div>
-            ${isOwn?
-              `<button onclick="cancelNFTListing(${i+1})" style="background:var(--bg3);border:1px solid var(--border);color:var(--red);border-radius:8px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer;">Cancel</button>`:
-              `<button onclick="buyNFT(${i+1},${l.price})" style="background:var(--gold);color:#08090C;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;">Buy</button>`
-            }
-          </div>
-        </div>
-      </div>`;
+      return '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;"><div style="aspect-ratio:1;background:var(--bg3);overflow:hidden;">'+(img?'<img src="'+img+'" style="width:100%;height:100%;object-fit:cover;" loading="lazy"/>':"<div style='font-size:40px;display:flex;align-items:center;justify-content:center;height:100%;'>🖼️</div>")+'</div><div style="padding:12px;"><div style="font-size:13px;font-weight:700;margin-bottom:8px;">'+esc(name)+'</div><div style="display:flex;align-items:center;justify-content:space-between;"><div style="font-family:monospace;font-size:14px;font-weight:700;color:var(--gold);">'+parseFloat(ethers.formatEther(l.price)).toFixed(4)+' zkLTC</div>'+(isOwn?'<button onclick="cancelNFTListing('+(i+1)+')" style="background:var(--bg3);border:1px solid var(--border);color:var(--red);border-radius:8px;padding:6px 10px;font-size:11px;cursor:pointer;">Cancel</button>':'<button onclick="buyNFT('+(i+1)+','+l.price+')" style="background:var(--gold);color:#08090C;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;">Buy</button>')+'</div></div></div>';
     }));
-    document.getElementById('marketListings').innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;">${cards.join('')}</div>`;
+    document.getElementById('marketListings').innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;">'+cards.join('')+'</div>';
   }catch(e){document.getElementById('marketListings').innerHTML='<div class="app-empty">Failed to load</div>';}
 }
-
-function openListModal(){
-  if(!userAddr){showToast('Connect wallet first','err');return;}
-  document.getElementById('listNFTModal').classList.add('open');
-}
-
-async function loadNFTPreview(){
-  const contract=document.getElementById('listContract').value.trim();
-  const tokenId=document.getElementById('listTokenId').value.trim();
-  if(!contract||!tokenId){showToast('Enter contract and token ID','err');return;}
-  const preview=document.getElementById('nftListPreview');
-  preview.innerHTML='<div style="font-size:12px;color:var(--muted);">Loading...</div>';
-  try{
-    const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');
-    const nft=new ethers.Contract(contract,ERC721_ABI,p);
-    let uri=await nft.tokenURI(tokenId);
-    if(uri.startsWith('ipfs://')) uri='https://gateway.pinata.cloud/ipfs/'+uri.slice(7);
-    const meta=await fetch(uri).then(r=>r.json());
-    let img=meta.image||'';
-    if(img.startsWith('ipfs://')) img='https://gateway.pinata.cloud/ipfs/'+img.slice(7);
-    preview.innerHTML=`<div style="display:flex;align-items:center;gap:12px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px;">
-      <img src="${img}" style="width:60px;height:60px;border-radius:8px;object-fit:cover;" onerror="this.style.display='none'"/>
-      <div><div style="font-size:14px;font-weight:700;">${esc(meta.name||'NFT #'+tokenId)}</div><div style="font-size:11px;color:var(--green);margin-top:2px;">✓ NFT found</div></div>
-    </div>`;
-  }catch(e){preview.innerHTML='<div style="font-size:12px;color:var(--red);">Could not load NFT</div>';}
-}
-
-async function submitListing(){
-  if(!userAddr){showToast('Connect wallet first','err');return;}
-  const contract=document.getElementById('listContract').value.trim();
-  const tokenId=document.getElementById('listTokenId').value.trim();
-  const price=document.getElementById('listPrice').value.trim();
-  if(!contract||!tokenId||!price){showToast('Fill all fields','err');return;}
-  const btn=document.getElementById('submitListBtn');
-  try{
-    await switchToLitVM();
-    const nft=new ethers.Contract(contract,ERC721_ABI,signer);
-    const isApproved=await nft.isApprovedForAll(userAddr,NFT_MARKET);
-    if(!isApproved){
-      showToast('Approving marketplace...','ok');
-      await (await nft.setApprovalForAll(NFT_MARKET,true)).wait();
-    }
-    const market=new ethers.Contract(NFT_MARKET,NFT_MARKET_ABI,signer);
-    btn.textContent='Listing...';btn.disabled=true;
-    showToast('Confirm in MetaMask...','ok');
-    const tx=await market.listNFT(contract,tokenId,ethers.parseEther(price));
-    await tx.wait();
-    showToast('NFT listed! 🎉','ok');
-    document.getElementById('listNFTModal').classList.remove('open');
-    document.getElementById('listContract').value='';
-    document.getElementById('listTokenId').value='';
-    document.getElementById('listPrice').value='';
-    document.getElementById('nftListPreview').innerHTML='';
-    loadMarketplace();
-  }catch(e){showToast((e.reason||e.message||'Failed').slice(0,60),'err');}
-  btn.textContent='List for Sale';btn.disabled=false;
-}
-
-async function buyNFT(listingId,price){
-  if(!userAddr){showToast('Connect wallet first','err');return;}
-  try{
-    await switchToLitVM();
-    const market=new ethers.Contract(NFT_MARKET,NFT_MARKET_ABI,signer);
-    showToast('Confirm in MetaMask...','ok');
-    const tx=await market.buyNFT(listingId,{value:price});
-    await tx.wait();
-    showToast('NFT purchased! 🎉','ok');
-    loadMarketplace();
-  }catch(e){showToast((e.reason||e.message||'Failed').slice(0,60),'err');}
-}
-
-async function cancelNFTListing(listingId){
-  if(!userAddr){showToast('Connect wallet first','err');return;}
-  try{
-    await switchToLitVM();
-    const market=new ethers.Contract(NFT_MARKET,NFT_MARKET_ABI,signer);
-    await (await market.cancelListing(listingId)).wait();
-    showToast('Listing cancelled','ok');
-    loadMarketplace();
-  }catch(e){showToast((e.reason||e.message||'Failed').slice(0,60),'err');}
-}
+function openListModal(){if(!userAddr){showToast('Connect wallet first','err');return;}document.getElementById('listNFTModal').classList.add('open');}
+async function loadNFTPreview(){}
+async function submitListing(){if(!userAddr){showToast('Connect wallet first','err');return;}const contract=document.getElementById('listContract').value.trim();const tokenId=document.getElementById('listTokenId').value.trim();const price=document.getElementById('listPrice').value.trim();if(!contract||!tokenId||!price){showToast('Fill all fields','err');return;}try{await switchToLitVM();const nft=new ethers.Contract(contract,ERC721_ABI,signer);if(!await nft.isApprovedForAll(userAddr,NFT_MARKET))await(await nft.setApprovalForAll(NFT_MARKET,true)).wait();const market=new ethers.Contract(NFT_MARKET,NFT_MARKET_ABI,signer);await(await market.listNFT(contract,tokenId,ethers.parseEther(price))).wait();showToast('NFT listed! 🎉','ok');document.getElementById('listNFTModal').classList.remove('open');loadMarketplace();}catch(e){showToast((e.reason||e.message||'Failed').slice(0,60),'err');}}
+async function buyNFT(listingId,price){if(!userAddr){showToast('Connect wallet first','err');return;}try{await switchToLitVM();const market=new ethers.Contract(NFT_MARKET,NFT_MARKET_ABI,signer);await(await market.buyNFT(listingId,{value:price})).wait();showToast('NFT purchased! 🎉','ok');loadMarketplace();}catch(e){showToast((e.reason||e.message||'Failed').slice(0,60),'err');}}
+async function cancelNFTListing(id){if(!userAddr)return;try{await switchToLitVM();const market=new ethers.Contract(NFT_MARKET,NFT_MARKET_ABI,signer);await(await market.cancelListing(id)).wait();showToast('Listing cancelled','ok');loadMarketplace();}catch(e){showToast((e.reason||e.message||'Failed').slice(0,60),'err');}}
 
 // ── EXPLORE ──
-let searchFilter = 'users';
-let searchTimer = null;
-
-function setSearchFilter(f){
-  searchFilter=f;
-  ['users','posts'].forEach(t=>{
-    const btn=document.getElementById('filter'+t.charAt(0).toUpperCase()+t.slice(1));
-    if(t===f){btn.style.borderColor='var(--gold)';btn.style.background='rgba(245,200,66,0.1)';btn.style.color='var(--gold)';}
-    else{btn.style.borderColor='var(--border)';btn.style.background='var(--bg3)';btn.style.color='var(--muted)';}
-  });
-  const q=document.getElementById('searchInput').value.trim();
-  if(q) doSearch();
-}
-
-function onSearchInput(){
-  clearTimeout(searchTimer);
-  searchTimer=setTimeout(()=>{
-    const q=document.getElementById('searchInput').value.trim();
-    if(q.length>=2) doSearch();
-    else loadExploreDefault();
-  },400);
-}
-
-async function doSearch(){
-  const q=document.getElementById('searchInput').value.trim();
-  if(!q){loadExploreDefault();return;}
-  const el=document.getElementById('searchResults');
-  el.innerHTML='<div class="app-loader">Searching...</div>';
-  try{
-    if(searchFilter==='users'){
-      const {data:users}=await sb.from('users')
-        .select('*')
-        .or(`username.ilike.%${q}%,wallet.ilike.%${q}%`)
-        .limit(20);
-      if(!users||users.length===0){
-        el.innerHTML='<div class="app-empty"><div class="app-empty-ico">🔍</div>No users found for "'+esc(q)+'"</div>';
-        return;
-      }
-      el.innerHTML=users.map(u=>renderUserCard(u)).join('');
-    } else {
-      const {data:posts}=await sb.from('posts')
-        .select('*, users!posts_author_wallet_fkey(username,avatar_url,pass_type)')
-        .ilike('content','%'+q+'%')
-        .order('created_at',{ascending:false})
-        .limit(20);
-      if(!posts||posts.length===0){
-        el.innerHTML='<div class="app-empty"><div class="app-empty-ico">🔍</div>No posts found for "'+esc(q)+'"</div>';
-        return;
-      }
-      let ls=new Set();
-      if(userAddr){const {data:lk}=await sb.from('likes').select('post_id').eq('liker_wallet',userAddr).in('post_id',posts.map(p=>p.id));if(lk)lk.forEach(l=>ls.add(l.post_id));}
-      el.innerHTML=posts.map(p=>renderPost(p,ls.has(p.id))).join('');
-    }
-  }catch(e){el.innerHTML='<div class="app-empty">Search failed</div>';}
-}
-
+let searchFilter='users',searchTimer=null;
+function setSearchFilter(f){searchFilter=f;['users','posts'].forEach(t=>{const btn=document.getElementById('filter'+t.charAt(0).toUpperCase()+t.slice(1));if(t===f){btn.style.borderColor='var(--gold)';btn.style.background='rgba(245,200,66,0.1)';btn.style.color='var(--gold)';}else{btn.style.borderColor='var(--border)';btn.style.background='var(--bg3)';btn.style.color='var(--muted)';}});if(document.getElementById('searchInput').value.trim())doSearch();}
+function onSearchInput(){clearTimeout(searchTimer);searchTimer=setTimeout(()=>{const q=document.getElementById('searchInput').value.trim();if(q.length>=2)doSearch();else loadExploreDefault();},400);}
+async function doSearch(){const q=document.getElementById('searchInput').value.trim();if(!q){loadExploreDefault();return;}const el=document.getElementById('searchResults');el.innerHTML='<div class="app-loader">Searching...</div>';try{if(searchFilter==='users'){const {data:users}=await sb.from('users').select('*').or('username.ilike.%'+q+'%,wallet.ilike.%'+q+'%').limit(20);if(!users||users.length===0){el.innerHTML='<div class="app-empty">No users found</div>';return;}el.innerHTML=users.map(u=>renderUserCard(u)).join('');}else{const {data:posts}=await sb.from('posts').select('*, users!posts_author_wallet_fkey(username,avatar_url,pass_type)').ilike('content','%'+q+'%').order('created_at',{ascending:false}).limit(20);if(!posts||posts.length===0){el.innerHTML='<div class="app-empty">No posts found</div>';return;}let ls=new Set();if(userAddr){const {data:lk}=await sb.from('likes').select('post_id').eq('liker_wallet',userAddr).in('post_id',posts.map(p=>p.id));if(lk)lk.forEach(l=>ls.add(l.post_id));}el.innerHTML=posts.map(p=>renderPost(p,ls.has(p.id))).join('');}}catch(e){}}
 async function loadExploreDefault(){
-  // Trending users — most followers
-  const trendEl=document.getElementById('trendingUsers');
-  const latestEl=document.getElementById('latestPosts');
-  if(!trendEl) return;
-  document.getElementById('searchResults').innerHTML=`
-    <div style="padding:12px 20px;font-size:12px;font-family:'Space Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);">Trending Users</div>
-    <div id="trendingUsers"><div class="app-loader">Loading...</div></div>
-    <div style="padding:12px 20px;font-size:12px;font-family:'Space Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-top:8px;">Latest Posts</div>
-    <div id="latestPosts"><div class="app-loader">Loading...</div></div>`;
+  const sr=document.getElementById('searchResults');
+  if(!sr)return;
+  sr.innerHTML='<div style="padding:12px 20px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--border);">Trending Users</div>'
+    +'<div id="trendingUsers"><div class="app-loader">Loading...</div></div>'
+    +'<div style="padding:12px 20px;font-size:12px;color:var(--muted);border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-top:8px;">Latest Posts</div>'
+    +'<div id="latestPosts"><div class="app-loader">Loading...</div></div>';
   try{
-    // Top users by post count
     const {data:users}=await sb.from('users').select('*').not('username','is',null).limit(10);
-    const tu=document.getElementById('trendingUsers');
-    if(users&&users.length>0) tu.innerHTML=users.map(u=>renderUserCard(u)).join('');
-    else tu.innerHTML='<div style="padding:16px 20px;font-size:13px;color:var(--muted);">No users yet</div>';
-    // Latest posts
+    const tuEl=document.getElementById('trendingUsers');
+    if(tuEl&&users)tuEl.innerHTML=users.map(u=>renderUserCard(u)).join('');
     const {data:posts}=await sb.from('posts').select('*, users!posts_author_wallet_fkey(username,avatar_url,pass_type)').order('created_at',{ascending:false}).limit(10);
-    const lp=document.getElementById('latestPosts');
-    if(posts&&posts.length>0){
+    const lpEl=document.getElementById('latestPosts');
+    if(lpEl&&posts){
       let ls=new Set();
       if(userAddr){const {data:lk}=await sb.from('likes').select('post_id').eq('liker_wallet',userAddr).in('post_id',posts.map(p=>p.id));if(lk)lk.forEach(l=>ls.add(l.post_id));}
-      lp.innerHTML=posts.map(p=>renderPost(p,ls.has(p.id))).join('');
-    } else lp.innerHTML='<div style="padding:16px 20px;font-size:13px;color:var(--muted);">No posts yet</div>';
+      lpEl.innerHTML=posts.map(p=>renderPost(p,ls.has(p.id))).join('');
+    }
   }catch(e){}
 }
 
 function renderUserCard(u){
-  const av=u.avatar_url?`<img src="${u.avatar_url}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.textContent='🧑'"/>`:'🧑';
-  const badge=u.pass_type==='gold'?'<span style="font-size:10px;padding:2px 8px;border-radius:100px;background:rgba(245,200,66,0.15);color:var(--gold);font-weight:700;">🥇 Gold</span>':u.pass_type==='silver'?'<span style="font-size:10px;padding:2px 8px;border-radius:100px;background:rgba(168,189,208,0.15);color:var(--silver);font-weight:700;">🥈 Silver</span>':'';
-  return `<div onclick="viewUserProfile('${u.wallet}')" style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background=''">
-    <div style="width:48px;height:48px;border-radius:50%;background:var(--bg3);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">${av}</div>
-    <div style="flex:1;min-width:0;">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
-        <span style="font-size:15px;font-weight:700;">${esc(u.username||sAddr(u.wallet))}</span>
-        ${badge}
-      </div>
-      <div style="font-size:12px;color:var(--muted);font-family:'Space Mono',monospace;">${sAddr(u.wallet)}</div>
-      ${u.bio?`<div style="font-size:13px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(u.bio)}</div>`:''}
-    </div>
-    <div style="font-size:18px;color:var(--muted);">→</div>
-  </div>`;
+  const div=document.createElement('div');
+  div.style.cssText='display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border);cursor:pointer;';
+  div.onmouseover=function(){this.style.background='rgba(255,255,255,0.02)';};
+  div.onmouseout=function(){this.style.background='';};
+  div.onclick=function(){viewUserProfile(u.wallet);};
+  const avWrap=document.createElement('div');
+  avWrap.style.cssText='width:48px;height:48px;border-radius:50%;background:var(--bg3);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;';
+  if(u.avatar_url){const img=document.createElement('img');img.src=u.avatar_url;img.style.cssText='width:100%;height:100%;object-fit:cover;';avWrap.appendChild(img);}
+  else avWrap.textContent='🧑';
+  const info=document.createElement('div');
+  info.style.cssText='flex:1;min-width:0;';
+  info.innerHTML='<div style="font-size:15px;font-weight:700;">'+esc(u.username||sAddr(u.wallet))+'</div><div style="font-size:12px;color:var(--muted);font-family:monospace;">'+sAddr(u.wallet)+'</div>';
+  div.appendChild(avWrap);div.appendChild(info);
+  return div.outerHTML;
 }
 
-function viewUserProfile(wallet){
-  showTab('profile');
-  loadProfile(wallet);
-}
+function viewUserProfile(wallet){showTab('profile');loadProfile(wallet);}
 
 async function showFollowersList(wallet, type){
   document.getElementById('followersModal').classList.add('open');
@@ -3928,658 +3321,189 @@ async function showFollowersList(wallet, type){
   title.textContent=type==='followers'?'Followers':'Following';
   list.innerHTML='<div class="app-loader">Loading...</div>';
   try{
-    let data,error;
-    if(type==='followers'){
-      const res=await sb.from('follows').select('follower_wallet').eq('following_wallet',wallet);
-      data=res.data;error=res.error;
-    } else {
-      const res=await sb.from('follows').select('following_wallet').eq('follower_wallet',wallet);
-      data=res.data;error=res.error;
-    }
-    if(error||!data||data.length===0){
-      list.innerHTML='<div class="app-empty" style="padding:20px;">No '+(type==='followers'?'followers':'following')+' yet</div>';
-      return;
-    }
+    let res;
+    if(type==='followers'){res=await sb.from('follows').select('follower_wallet').eq('following_wallet',wallet);}
+    else{res=await sb.from('follows').select('following_wallet').eq('follower_wallet',wallet);}
+    const data=res.data;
+    if(!data||data.length===0){list.innerHTML='<div class="app-empty" style="padding:20px;">No '+(type==='followers'?'followers':'following')+' yet</div>';return;}
     const wallets=data.map(function(d){return type==='followers'?d.follower_wallet:d.following_wallet;});
-    const {data:users}=await sb.from('users').select('wallet,username,avatar_url,pass_type').in('wallet',wallets);
-    const usersMap={};
-    if(users) users.forEach(function(u){usersMap[u.wallet]=u;});
+    const {data:users}=await sb.from('users').select('wallet,username,avatar_url').in('wallet',wallets);
+    const usersMap={};if(users)users.forEach(function(u){usersMap[u.wallet]=u;});
     list.innerHTML='';
     wallets.forEach(function(w){
       const u=usersMap[w]||{wallet:w};
-      const av=u.avatar_url?('<img src="'+u.avatar_url+'" style="width:40px;height:40px;border-radius:50%;object-fit:cover;"/>'):'<div style="width:40px;height:40px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:18px;">🧑</div>';
       const row=document.createElement('div');
-      row.style.cssText='display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;transition:background .15s;';
+      row.style.cssText='display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;';
       row.onmouseover=function(){this.style.background='var(--bg3)';};
       row.onmouseout=function(){this.style.background='';};
+      const avEl=document.createElement('div');
+      avEl.style.cssText='width:40px;height:40px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:18px;overflow:hidden;flex-shrink:0;';
+      avEl.textContent='🧑';
+      if(u.avatar_url){const img=document.createElement('img');img.src=u.avatar_url;img.style.cssText='width:100%;height:100%;object-fit:cover;';avEl.innerHTML='';avEl.appendChild(img);}
       const info=document.createElement('div');
       info.style.cssText='flex:1;min-width:0;';
-      info.innerHTML='<div style="font-size:14px;font-weight:600;">'+(u.username||sAddr(w))+'</div><div style="font-size:11px;color:var(--muted);font-family:monospace;">'+w.slice(0,8)+'...'+w.slice(-4)+'</div>';
+      info.innerHTML='<div style="font-size:14px;font-weight:600;">'+(u.username||sAddr(w))+'</div><div style="font-size:11px;color:var(--muted);">'+w.slice(0,8)+'...'+w.slice(-4)+'</div>';
       const dmBtn=document.createElement('button');
       dmBtn.textContent='💬';
-      dmBtn.style.cssText='background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer;';
+      dmBtn.style.cssText='background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer;';
       dmBtn.onclick=(function(addr){return function(e){e.stopPropagation();openDMWith(addr);document.getElementById('followersModal').classList.remove('open');};})(w);
-      const avWrap=document.createElement('div');avWrap.innerHTML=av;if(avWrap.firstChild)row.appendChild(avWrap.firstChild);
-      row.appendChild(info);
-      row.appendChild(dmBtn);
-      row.onclick=function(){
-        document.getElementById('followersModal').classList.remove('open');
-        loadProfile(w);
-        showTab('profile');
-      };
+      row.appendChild(avEl);row.appendChild(info);row.appendChild(dmBtn);
+      row.onclick=function(){document.getElementById('followersModal').classList.remove('open');loadProfile(w);showTab('profile');};
       list.appendChild(row);
     });
   }catch(e){list.innerHTML='<div class="app-empty" style="padding:20px;">Error loading</div>';}
 }
 
-async function declineChallengeDM(fromWallet, event){
-  if(event) event.stopPropagation();
-  try{
-    const {data:game}=await sb.from('battleship_games')
-      .select('*').eq('status','waiting').eq('player1_wallet',fromWallet)
-      .eq('challenge_to',userAddr).order('created_at',{ascending:false}).limit(1).single();
-    if(game){
-      await sb.from('battleship_games').update({status:'cancelled'}).eq('id',game.id);
-      if(false&&game.bet_token!=='FREE'){
-        try{
-          await switchToLitVM();
-          const freshSigner=await provider.getSigner();
-          const coder=ethers.AbiCoder.defaultAbiCoder();
-          const sel=ethers.id('cancelGame(uint256)').slice(0,10);
-          const data=sel+coder.encode(['uint256'],[0n]).slice(2);
-          await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data,gasLimit:200000n})).wait();
-        }catch{}
-      }
-    }
-    showToast('Challenge declined','ok');
-  }catch(e){showToast('Failed','err');}
-}
-
-async function declineChallenge(fromWallet, notifId, event){
-  if(event) event.stopPropagation();
-  try{
-    // Cancel the waiting game
-    const {data:game}=await sb.from('battleship_games')
-      .select('*').eq('status','waiting').eq('player1_wallet',fromWallet)
-      .eq('challenge_to',userAddr).order('created_at',{ascending:false}).limit(1).single();
-    if(game){
-      await sb.from('battleship_games').update({status:'cancelled'}).eq('id',game.id);
-      // Refund on contract if staked
-      if(false&&game.bet_token!=='FREE'){
-        try{
-          await switchToLitVM();
-          const freshSigner=await provider.getSigner();
-          const coder=ethers.AbiCoder.defaultAbiCoder();
-          const sel=ethers.id('cancelGame(uint256)').slice(0,10);
-          const data=sel+coder.encode(['uint256'],[0n]).slice(2);
-          await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data,gasLimit:200000n})).wait();
-        }catch{}
-      }
-    }
-    // Mark notification as read
-    await sb.from('notifications').update({read:true}).eq('id',notifId);
-    showToast('Challenge declined','ok');
-    loadNotifications();
-  }catch(e){showToast('Failed','err');}
-}
-
-async function acceptChallenge(fromWallet, event){
-  if(event) event.stopPropagation();
-  if(!userAddr){showToast('Connect wallet first','err');return;}
-  try{
-    // Find ANY waiting game from this challenger
-    let game=null;
-    const {data:allGames}=await sb.from('battleship_games')
-      .select('*')
-      .eq('player1_wallet',fromWallet)
-      .in('status',['waiting','playing'])
-      .order('created_at',{ascending:false})
-      .limit(5);
-    if(allGames&&allGames.length>0){
-      // Prefer challenge_to=me, then waiting, then playing
-      game=allGames.find(g=>g.challenge_to===userAddr&&g.status==='waiting')
-        ||allGames.find(g=>g.status==='waiting')
-        ||allGames.find(g=>g.status==='playing'&&(!g.player2_wallet||g.player2_wallet===userAddr));
-    }
-    if(!game){
-      showToast('No active game found from this player','err');
-      return;
-    }
-    // If already playing and we're player2 - just rejoin
-    if(game.status==='playing'&&game.player2_wallet===userAddr){
-      showToast('Rejoining game...','ok');
-      showTab('battle');
-      setTimeout(function(){startPvPGame(game.id);},300);
-      return;
-    }
-    // If staked game - need to stake same amount first
-    if(game.bet_token!=='FREE'&&game.contract_game_id>0){
-      try{
-        await switchToLitVM();
-        const freshSigner=await provider.getSigner();
-        const amtWei=ethers.parseEther(game.bet_amount);
-        const coder=ethers.AbiCoder.defaultAbiCoder();
-        if(game.bet_token==='GATE'){
-          const gate=new ethers.Contract(GATE_TOKEN,GATE_ABI,freshSigner);
-          showToast('Approving '+game.bet_amount+' GATE...','ok');
-          await (await gate.approve(BATTLESHIP_ADDR,amtWei)).wait();
-          showToast('Joining game on chain...','ok');
-          const sel=ethers.id('joinGameGATE(uint256)').slice(0,10);
-          const data=sel+coder.encode(['uint256'],[0n]).slice(2);
-          await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data,gasLimit:300000n})).wait();
-        } else {
-          showToast('Sending '+game.bet_amount+' zkLTC...','ok');
-          const sel=ethers.id('joinGameZK(uint256)').slice(0,10);
-          const data=sel+coder.encode(['uint256'],[0n]).slice(2);
-          await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data,value:amtWei,gasLimit:300000n})).wait();
-        }
-      }catch(stakeErr){
-        showToast('Failed to stake: '+(stakeErr.reason||stakeErr.message||'').slice(0,50),'err');
-        return;
-      }
-    }
-    // Join the game in DB
-    await sb.from('battleship_games').update({
-      player2_wallet:userAddr,
-      status:'playing',
-      current_turn:game.player1_wallet||fromWallet
-    }).eq('id',game.id);
-    showToast('Challenge accepted! Place your ships ⚔️','ok');
-    document.getElementById('challengeModal')&&document.getElementById('challengeModal').classList.remove('open');
-    showTab('battle');
-    setTimeout(function(){
-      startPvPGame(game.id);
-    },300);
-  }catch(e){showToast('Failed to accept: '+(e.message||''),'err');}
-}
-
-function openDMWith(wallet){
-  showTab('messages');
-  // Set active conversation to this wallet
-  setTimeout(function(){
-    openConversation(wallet);
-  }, 300);
-}
-
 // ── NOTIFICATIONS ──
 async function loadNotifications(){
-  if(!userAddr) return;
+  if(!userAddr)return;
   const el=document.getElementById('notifsList');
   el.innerHTML='<div class="app-loader">Loading...</div>';
   try{
-    const {data:notifs}=await sb.from('notifications')
-      .select('*')
-      .eq('to_wallet',userAddr)
-      .order('created_at',{ascending:false})
-      .limit(50);
-    if(!notifs||notifs.length===0){
-      el.innerHTML='<div class="app-empty"><div class="app-empty-ico">🔔</div>No notifications yet</div>';
-      return;
-    }
+    const {data:notifs}=await sb.from('notifications').select('*').eq('to_wallet',userAddr).order('created_at',{ascending:false}).limit(50);
+    if(!notifs||notifs.length===0){el.innerHTML='<div class="app-empty"><div class="app-empty-ico">🔔</div>No notifications yet</div>';return;}
     const wallets=[...new Set(notifs.map(n=>n.from_wallet))];
     const users={};
-    await Promise.all(wallets.map(async w=>{
-      const {data:u}=await sb.from('users').select('username,avatar_url').eq('wallet',w).single();
-      users[w]=u;
-    }));
+    await Promise.all(wallets.map(async w=>{const {data:u}=await sb.from('users').select('username,avatar_url').eq('wallet',w).single();users[w]=u;}));
     el.innerHTML=notifs.map(n=>{
       const u=users[n.from_wallet]||{};
       const name=u.username||sAddr(n.from_wallet);
-      const avatar=u.avatar_url?`<img src="${u.avatar_url}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.textContent='🧑'"/>`:'🧑';
+      const avatar=u.avatar_url?('<img src="'+u.avatar_url+'" style="width:100%;height:100%;object-fit:cover;"/>'):'🧑';
       const icon=n.type==='like'?'❤️':n.type==='follow'?'👤':n.type==='challenge'?'⚔️':'💬';
-      const icon2=n.type==='repost'?'🔁':n.type==='challenge'?'⚔️':icon;
       let text='';
-      if(n.type==='like') text=`<b>${esc(name)}</b> liked your post`;
-      else if(n.type==='follow') text=`<b>${esc(name)}</b> followed you`;
-      else if(n.type==='repost') text=`<b>${esc(name)}</b> reposted your post`;
-      else if(n.type==='challenge'){
-        const betInfo=n.bet_amount?n.bet_amount+' '+(n.bet_token||'GATE'):'Free Play';
-        text=`<b>${esc(name)}</b> challenges you to ⚔️ Battleship! Bet: ${betInfo}`;
+      if(n.type==='like')text='<b>'+esc(name)+'</b> liked your post';
+      else if(n.type==='follow')text='<b>'+esc(name)+'</b> followed you';
+      else if(n.type==='challenge')text='<b>'+esc(name)+'</b> challenges you to ⚔️ Battleship!';
+      else text='<b>'+esc(name)+'</b> sent you a message';
+      // Build notification card using DOM
+      const card=document.createElement('div');
+      card.style.cssText='display:flex;align-items:flex-start;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border);background:'+(n.read?'':'rgba(245,200,66,0.03)')+';';
+      const avDiv=document.createElement('div');avDiv.style.cssText='width:40px;height:40px;border-radius:50%;background:var(--bg3);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;';
+      if(u.avatar_url){const img=document.createElement('img');img.src=u.avatar_url;img.style.cssText='width:100%;height:100%;object-fit:cover;';avDiv.appendChild(img);}else avDiv.textContent='🧑';
+      const body=document.createElement('div');body.style.cssText='flex:1;';
+      body.innerHTML='<div style="font-size:14px;line-height:1.5;">'+text+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">'+tAgo(n.created_at)+'</div>';
+      if(n.type==='challenge'){
+        const btns=document.createElement('div');btns.style.cssText='display:flex;gap:8px;margin-top:8px;';
+        const ab=document.createElement('button');ab.textContent='⚔️ Accept';ab.style.cssText='padding:7px 16px;background:var(--gold);color:#08090C;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;border:none;';
+        ab.onclick=(function(fw){return function(e){acceptChallenge(fw,e);};})(n.from_wallet);
+        const db=document.createElement('button');db.textContent='✕ Decline';db.style.cssText='padding:7px 16px;background:var(--bg3);color:var(--red);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid rgba(255,77,77,.3);';
+        db.onclick=(function(fw,nid){return function(e){declineChallenge(fw,nid,e);};})(n.from_wallet,n.id);
+        btns.appendChild(ab);btns.appendChild(db);body.appendChild(btns);
       }
-      else text=`<b>${esc(name)}</b> sent you a message`;
-      return `<div onclick="markRead('${n.id}')" style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border);cursor:pointer;background:${n.read?'':'rgba(245,200,66,0.03)'};transition:background .15s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='${n.read?'':'rgba(245,200,66,0.03)'}'">
-        <div style="position:relative;flex-shrink:0;">
-          <div style="width:40px;height:40px;border-radius:50%;background:var(--bg3);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:16px;">${avatar}</div>
-          <div style="position:absolute;bottom:-2px;right:-2px;width:18px;height:18px;border-radius:50%;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:11px;">${n.type==='repost'?'🔁':icon}</div>
-        </div>
-        <div style="flex:1;min-width:0;">
-          <div style="font-size:14px;line-height:1.5;">${text}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px;">${tAgo(n.created_at)}</div>
-        </div>
-        ${!n.read?'<div style="width:8px;height:8px;border-radius:50%;background:var(--gold);flex-shrink:0;"></div>':''}
-      </div>`;
-    }).join('');
-    updateNotifBadge();
+      if(!n.read){const dot=document.createElement('div');dot.style.cssText='width:8px;height:8px;border-radius:50%;background:var(--gold);flex-shrink:0;margin-top:4px;';card.appendChild(avDiv);card.appendChild(body);card.appendChild(dot);}
+      else{card.appendChild(avDiv);card.appendChild(body);}
+      el.appendChild(card);
+      return '';
+
+
+    });
   }catch(e){el.innerHTML='<div class="app-empty">Failed to load</div>';}
 }
-
-async function markRead(id){
-  await sb.from('notifications').update({read:true}).eq('id',id);
-  updateNotifBadge();
-}
-
-async function markAllRead(){
-  if(!userAddr) return;
-  await sb.from('notifications').update({read:true}).eq('to_wallet',userAddr).eq('read',false);
-  loadNotifications();
-}
-
-async function updateNotifBadge(){
-  if(!userAddr) return;
-  const {count}=await sb.from('notifications').select('*',{count:'exact',head:true}).eq('to_wallet',userAddr).eq('read',false);
-  const badge=document.getElementById('notifBadge');
-  if(count>0){badge.style.display='inline';badge.textContent=count;}
-  else badge.style.display='none';
-}
-
-async function createNotif(toWallet, type, postId=null){
-  if(!userAddr||userAddr===toWallet) return;
-  try{
-    await sb.from('notifications').insert({
-      to_wallet:toWallet,
-      from_wallet:userAddr,
-      type,
-      post_id:postId||undefined
-    });
-  }catch(e){}
-}
+async function markRead(id){await sb.from('notifications').update({read:true}).eq('id',id);updateNotifBadge();}
+async function markAllRead(){if(!userAddr)return;await sb.from('notifications').update({read:true}).eq('to_wallet',userAddr).eq('read',false);loadNotifications();}
+async function updateNotifBadge(){if(!userAddr)return;const {count}=await sb.from('notifications').select('*',{count:'exact',head:true}).eq('to_wallet',userAddr).eq('read',false);const badge=document.getElementById('notifBadge');if(count>0){badge.style.display='inline';badge.textContent=count;}else badge.style.display='none';}
+async function createNotif(toWallet,type,postId=null){if(!userAddr||userAddr===toWallet)return;try{await sb.from('notifications').insert({to_wallet:toWallet,from_wallet:userAddr,type,post_id:postId||undefined});}catch(e){}}
 
 // ── LAUNCHPAD ──
-let ltOpts = {ltMint:false, ltBurn:false, ltPause:false};
-
-function toggleLtOpt(id){
-  ltOpts[id] = !ltOpts[id];
-  const btn = document.getElementById(id);
-  if(ltOpts[id]){
-    btn.style.borderColor='#7c3aed';btn.style.background='#2d1a4a';btn.style.color='#c4b5fd';
-  } else {
-    btn.style.borderColor='var(--border)';btn.style.background='var(--bg3)';btn.style.color='var(--muted)';
-  }
-}
-
-async function loadLaunchpad(){
-  try{
-    const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');
-    const factory=new ethers.Contract(TOKEN_FACTORY,FACTORY_ABI,p);
-    const fee=await factory.creationFee();
-    const total=await factory.totalTokensCreated();
-    document.getElementById('totalTokensCreated').textContent=total.toString();
-
-    if(userAddr){
-      // Check Gold Pass
-      const goldNFT=new ethers.Contract(GOLD_NFT_ADDR,GOLD_NFT_ABI2,p);
-      const goldBal=await goldNFT.balanceOf(userAddr);
-      const hasGold=goldBal>0n;
-      const badge=document.getElementById('launchVipBadge');
-      badge.style.display=hasGold?'flex':'none';
-      document.getElementById('ltFeeDisplay').textContent=hasGold?'FREE (Gold Pass)':parseFloat(ethers.formatEther(fee)).toFixed(4)+' zkLTC';
-
-      // Load my tokens
-      const tokens=await factory.getTokensByCreator(userAddr);
-      const list=document.getElementById('myTokensList');
-      if(tokens.length===0){
-        list.innerHTML='<div style="font-size:13px;color:var(--muted);">No tokens created yet</div>';
-      } else {
-        const items=await Promise.all(tokens.slice(-5).reverse().map(async addr=>{
-          try{
-            const t=new ethers.Contract(addr,TOKEN_INFO_ABI,p);
-            const [name,symbol,supply]=await Promise.all([t.name(),t.symbol(),t.totalSupply()]);
-            return {addr,name,symbol,supply};
-          }catch{return {addr,name:'Unknown',symbol:'???',supply:0n};}
-        }));
-        list.innerHTML=items.map(t=>`
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">
-            <div style="display:flex;align-items:center;gap:10px;">
-              <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#5b21b6);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#e9d5ff;">${esc(t.symbol.slice(0,2))}</div>
-              <div>
-                <div style="font-size:13px;font-weight:600;">${esc(t.name)} (${esc(t.symbol)})</div>
-                <div style="font-size:10px;color:var(--muted);">${t.addr.slice(0,16)}...</div>
-              </div>
-            </div>
-            <button onclick="cpText('${t.addr}');showToast('Address copied!','ok')"
-              style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:4px 8px;font-size:10px;cursor:pointer;">Copy</button>
-          </div>`).join('');
-      }
-    } else {
-      document.getElementById('ltFeeDisplay').textContent='0.003 zkLTC';
-    }
-  }catch(e){}
-}
-
-async function launchToken(){
-  if(!userAddr){showToast('Connect wallet first','err');return;}
-  const name=document.getElementById('ltName').value.trim();
-  const symbol=document.getElementById('ltSymbol').value.trim();
-  const decimals=parseInt(document.getElementById('ltDecimals').value)||18;
-  const supply=document.getElementById('ltSupply').value.trim();
-  if(!name||!symbol||!supply){showToast('Fill all required fields','err');return;}
-  const btn=document.getElementById('launchBtn');
-  try{
-    await switchToLitVM();
-    const factory=new ethers.Contract(TOKEN_FACTORY,FACTORY_ABI,signer);
-    const fee=await factory.creationFee();
-    btn.textContent='Deploying...';btn.disabled=true;
-    showToast('Confirm in MetaMask...','ok');
-    const tx=await factory.createToken(name,symbol,decimals,supply,ltOpts.ltMint,ltOpts.ltBurn,ltOpts.ltPause,{value:fee});
-    await tx.wait();
-    showToast('🎉 Token '+symbol+' deployed!','ok');
-    document.getElementById('ltName').value='';
-    document.getElementById('ltSymbol').value='';
-    document.getElementById('ltSupply').value='';
-    loadLaunchpad();
-  }catch(e){showToast((e.reason||e.message||'Failed').slice(0,60),'err');}
-  btn.textContent='🚀 Deploy Token';btn.disabled=false;
-}
+let ltOpts={ltMint:false,ltBurn:false,ltPause:false};
+function toggleLtOpt(id){ltOpts[id]=!ltOpts[id];const btn=document.getElementById(id);if(ltOpts[id]){btn.style.borderColor='#7c3aed';btn.style.background='#2d1a4a';btn.style.color='#c4b5fd';}else{btn.style.borderColor='var(--border)';btn.style.background='var(--bg3)';btn.style.color='var(--muted)';}}
+async function loadLaunchpad(){try{const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');const factory=new ethers.Contract(TOKEN_FACTORY,FACTORY_ABI,p);const fee=await factory.creationFee();const total=await factory.totalTokensCreated();document.getElementById('totalTokensCreated').textContent=total.toString();document.getElementById('ltFeeDisplay').textContent=parseFloat(ethers.formatEther(fee)).toFixed(4)+' zkLTC';}catch(e){}}
+async function launchToken(){if(!userAddr){showToast('Connect wallet first','err');return;}const name=document.getElementById('ltName').value.trim();const symbol=document.getElementById('ltSymbol').value.trim();const decimals=parseInt(document.getElementById('ltDecimals').value)||18;const supply=document.getElementById('ltSupply').value.trim();if(!name||!symbol||!supply){showToast('Fill all required fields','err');return;}try{await switchToLitVM();const factory=new ethers.Contract(TOKEN_FACTORY,FACTORY_ABI,signer);const fee=await factory.creationFee();const tx=await factory.createToken(name,symbol,decimals,supply,ltOpts.ltMint,ltOpts.ltBurn,ltOpts.ltPause,{value:fee});await tx.wait();showToast('🎉 Token '+symbol+' deployed!','ok');loadLaunchpad();}catch(e){showToast((e.reason||e.message||'Failed').slice(0,60),'err');}}
 
 // ── PRESALE ──
-async function loadPresaleInfo(){
-  try{
-    const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');
-    const pc=new ethers.Contract(GATE_PRESALE,PRESALE_ABI,p);
-    const [raised,remaining,gateInContract,active]=await pc.getInfo();
-    const raisedF=parseFloat(ethers.formatEther(raised));
-    const pct=Math.min(100,(raisedF/100)*100).toFixed(1);
-    document.getElementById('presaleStatus').textContent=active?'🟢 Active':'🔴 Inactive';
-    document.getElementById('presaleStatus').style.color=active?'var(--green)':'var(--red)';
-    document.getElementById('presaleRaised').textContent=raisedF.toFixed(4)+' / 100';
-    document.getElementById('presalePct').textContent=pct+'%';
-    document.getElementById('presaleBar').style.width=pct+'%';
-    document.getElementById('presaleGatePool').textContent=parseFloat(ethers.formatEther(gateInContract)).toFixed(0)+' GATE';
-    if(userAddr){
-      const contrib=await pc.contributed(userAddr);
-      document.getElementById('myContrib').textContent=parseFloat(ethers.formatEther(contrib)).toFixed(4)+' zkLTC';
-    }
-  }catch(e){}
-}
-
-function updatePresaleCalc(){
-  const amt=parseFloat(document.getElementById('presaleAmt').value);
-  const el=document.getElementById('presaleCalc');
-  if(!amt||amt<=0){el.textContent='';return;}
-  el.textContent='You receive: '+(amt*1000).toLocaleString()+' GATE';
-}
-
-async function buyPresale(){
-  if(!userAddr){showToast('Connect wallet first','err');return;}
-  const amt=document.getElementById('presaleAmt').value;
-  if(!amt||parseFloat(amt)<=0){showToast('Enter amount','err');return;}
-  const btn=document.getElementById('buyPresaleBtn');
-  try{
-    await switchToLitVM();
-    const freshSigner=await provider.getSigner();
-    const pc=new ethers.Contract(GATE_PRESALE,PRESALE_ABI,freshSigner);
-    const value=ethers.parseEther(amt);
-    btn.textContent='Confirm...';btn.disabled=true;
-    showToast('Confirm in MetaMask...','ok');
-    const tx=await pc.buy({value});
-    btn.textContent='Buying...';
-    await tx.wait();
-    showToast('🎉 GATE purchased! Check your wallet','ok');
-    document.getElementById('presaleAmt').value='';
-    document.getElementById('presaleCalc').textContent='';
-    loadPresaleInfo();
-    loadGateBal();
-  }catch(e){showToast((e.reason||e.message||'Failed').slice(0,60),'err');}
-  btn.textContent='Buy GATE';btn.disabled=false;
-}
+async function loadPresaleInfo(){try{const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');const pc=new ethers.Contract(GATE_PRESALE,PRESALE_ABI,p);const [raised,,gateInContract,active]=await pc.getInfo();const raisedF=parseFloat(ethers.formatEther(raised));const pct=Math.min(100,(raisedF/100)*100).toFixed(1);document.getElementById('presaleStatus').textContent=active?'🟢 Active':'🔴 Inactive';document.getElementById('presaleRaised').textContent=raisedF.toFixed(4)+' / 100';document.getElementById('presalePct').textContent=pct+'%';document.getElementById('presaleBar').style.width=pct+'%';document.getElementById('presaleGatePool').textContent=parseFloat(ethers.formatEther(gateInContract)).toFixed(0)+' GATE';if(userAddr){const contrib=await pc.contributed(userAddr);document.getElementById('myContrib').textContent=parseFloat(ethers.formatEther(contrib)).toFixed(4)+' zkLTC';}}catch(e){}}
+function updatePresaleCalc(){const amt=parseFloat(document.getElementById('presaleAmt').value);document.getElementById('presaleCalc').textContent=amt>0?'You receive: '+(amt*1000).toLocaleString()+' GATE':'';}
+async function buyPresale(){if(!userAddr){showToast('Connect wallet first','err');return;}const amt=document.getElementById('presaleAmt').value;if(!amt||parseFloat(amt)<=0){showToast('Enter amount','err');return;}try{await switchToLitVM();const freshSigner=await provider.getSigner();const pc=new ethers.Contract(GATE_PRESALE,PRESALE_ABI,freshSigner);const value=ethers.parseEther(amt);const tx=await pc.buy({value});await tx.wait();showToast('🎉 GATE purchased!','ok');loadPresaleInfo();loadGateBal();}catch(e){showToast((e.reason||e.message||'Failed').slice(0,60),'err');}}
 
 // ── MESSAGES ──
-let currentDMWallet = null;
-let dmTimer = null;
-
+let currentDMWallet=null,dmTimer=null;
 async function loadConversations(){
-  if(!userAddr) return;
-  const el = document.getElementById('convListItems');
-  el.innerHTML = '<div class="app-loader">Loading...</div>';
+  if(!userAddr)return;
+  const el=document.getElementById('convListItems');
+  el.innerHTML='<div class="app-loader">Loading...</div>';
   try{
-    const {data:sent} = await sb.from('messages').select('to_wallet').eq('from_wallet',userAddr);
-    const {data:recv} = await sb.from('messages').select('from_wallet').eq('to_wallet',userAddr);
-    const wallets = new Set([
-      ...(sent||[]).map(m=>m.to_wallet),
-      ...(recv||[]).map(m=>m.from_wallet)
-    ]);
-    if(wallets.size === 0){
-      el.innerHTML='<div class="app-empty"><div class="app-empty-ico">💬</div>No conversations yet.<br>Send the first message!</div>';
-      return;
-    }
-    const items = await Promise.all([...wallets].map(async w=>{
-      const {data:last} = await sb.from('messages')
-        .select('*').or(`and(from_wallet.eq.${userAddr},to_wallet.eq.${w}),and(from_wallet.eq.${w},to_wallet.eq.${userAddr})`)
-        .order('created_at',{ascending:false}).limit(1).single();
-      const {data:user} = await sb.from('users').select('username,avatar_url').eq('wallet',w).single();
-      const {count:unread} = await sb.from('messages').select('*',{count:'exact',head:true})
-        .eq('from_wallet',w).eq('to_wallet',userAddr).eq('read',false);
-      return {wallet:w, last, user, unread:unread||0};
+    const {data:sent}=await sb.from('messages').select('to_wallet').eq('from_wallet',userAddr);
+    const {data:recv}=await sb.from('messages').select('from_wallet').eq('to_wallet',userAddr);
+    const wallets=new Set([...(sent||[]).map(m=>m.to_wallet),...(recv||[]).map(m=>m.from_wallet)]);
+    if(wallets.size===0){el.innerHTML='<div class="app-empty"><div class="app-empty-ico">💬</div>No conversations yet.</div>';return;}
+    const items=await Promise.all([...wallets].map(async w=>{
+      const {data:last}=await sb.from('messages').select('*').or('and(from_wallet.eq.'+userAddr+',to_wallet.eq.'+w+'),and(from_wallet.eq.'+w+',to_wallet.eq.'+userAddr+')').order('created_at',{ascending:false}).limit(1).single();
+      const {data:user}=await sb.from('users').select('username,avatar_url').eq('wallet',w).single();
+      const {count:unread}=await sb.from('messages').select('*',{count:'exact',head:true}).eq('from_wallet',w).eq('to_wallet',userAddr).eq('read',false);
+      return {wallet:w,last,user,unread:unread||0};
     }));
     items.sort((a,b)=>new Date(b.last?.created_at||0)-new Date(a.last?.created_at||0));
-    el.innerHTML = items.map(i=>`
-      <div onclick="openDM('${i.wallet}')" style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background=''">
-        <div style="width:40px;height:40px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;overflow:hidden;">
-          ${i.user?.avatar_url?`<img src="${i.user.avatar_url}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.textContent='🧑'"/>`:'🧑'}
-        </div>
-        <div style="flex:1;min-width:0;">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
-            <span style="font-size:14px;font-weight:700;">${esc(i.user?.username||sAddr(i.wallet))}</span>
-            <span style="font-size:11px;color:var(--muted);">${tAgo(i.last?.created_at||'')}</span>
-          </div>
-          <div style="font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(i.last?.content||'')}</div>
-        </div>
-        ${i.unread>0?`<span style="background:var(--gold);color:#08090C;font-size:11px;font-weight:700;padding:2px 7px;border-radius:100px;">${i.unread}</span>`:''}
-      </div>`).join('');
-    // update unread badge
-    const totalUnread = items.reduce((s,i)=>s+i.unread,0);
-    const badge = document.getElementById('unreadBadge');
-    if(totalUnread>0){badge.style.display='inline';badge.textContent=totalUnread;}
-    else badge.style.display='none';
-  }catch(e){ el.innerHTML='<div class="app-empty">Failed to load</div>'; }
+    el.innerHTML='';
+    items.forEach(function(i){
+      const row=document.createElement('div');
+      row.style.cssText='display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border);cursor:pointer;';
+      row.onmouseover=function(){this.style.background='rgba(255,255,255,0.02)';};
+      row.onmouseout=function(){this.style.background='';};
+      row.onclick=(function(w){return function(){openDM(w);};})(i.wallet);
+      const avD=document.createElement('div');avD.style.cssText='width:40px;height:40px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;overflow:hidden;';
+      if(i.user&&i.user.avatar_url){const img=document.createElement('img');img.src=i.user.avatar_url;img.style.cssText='width:100%;height:100%;object-fit:cover;';avD.appendChild(img);}else avD.textContent='🧑';
+      const info=document.createElement('div');info.style.cssText='flex:1;min-width:0;';
+      info.innerHTML='<div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="font-size:14px;font-weight:700;">'+esc(i.user&&i.user.username?i.user.username:sAddr(i.wallet))+'</span><span style="font-size:11px;color:var(--muted);">'+tAgo(i.last&&i.last.created_at?i.last.created_at:'')+'</span></div><div style="font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(i.last&&i.last.content?i.last.content:'')+'</div>';
+      row.appendChild(avD);row.appendChild(info);
+      if(i.unread>0){const badge=document.createElement('span');badge.style.cssText='background:var(--gold);color:#08090C;font-size:11px;font-weight:700;padding:2px 7px;border-radius:100px;';badge.textContent=i.unread;row.appendChild(badge);}
+      el.appendChild(row);
+    });
+  }catch(e){el.innerHTML='<div class="app-empty">Failed</div>';}
 }
-
-async function openDM(wallet){
-  if(!userAddr) return;
-  currentDMWallet = wallet;
-  document.getElementById('convList').style.display='none';
-  document.getElementById('convView').style.display='flex';
-  document.getElementById('dmBackBtn').style.display='block';
-  const {data:user} = await sb.from('users').select('username').eq('wallet',wallet).single();
-  document.getElementById('dmTitle').textContent = '💬 '+(user?.username||sAddr(wallet));
-  loadMessages();
-  // mark as read
-  await sb.from('messages').update({read:true}).eq('from_wallet',wallet).eq('to_wallet',userAddr);
-  clearInterval(dmTimer);
-  dmTimer = setInterval(loadMessages, 3000);
-}
-
-function openDMByAddr(){
-  const addr = document.getElementById('newDmAddr').value.trim().toLowerCase();
-  if(!addr||!addr.startsWith('0x')){showToast('Enter valid address','err');return;}
-  openDM(addr);
-}
-
-function showConvList(){
-  currentDMWallet = null;
-  clearInterval(dmTimer);
-  document.getElementById('convList').style.display='block';
-  document.getElementById('convView').style.display='none';
-  document.getElementById('dmBackBtn').style.display='none';
-  document.getElementById('dmTitle').textContent='💬 Messages';
-  loadConversations();
-}
-
+async function openDM(wallet){if(!userAddr)return;currentDMWallet=wallet;document.getElementById('convList').style.display='none';document.getElementById('convView').style.display='flex';document.getElementById('dmBackBtn').style.display='block';const {data:user}=await sb.from('users').select('username').eq('wallet',wallet).single();document.getElementById('dmTitle').textContent='💬 '+(user?.username||sAddr(wallet));loadMessages();await sb.from('messages').update({read:true}).eq('from_wallet',wallet).eq('to_wallet',userAddr);clearInterval(dmTimer);dmTimer=setInterval(loadMessages,3000);}
+function openDMByAddr(){const addr=document.getElementById('newDmAddr').value.trim().toLowerCase();if(!addr||!addr.startsWith('0x')){showToast('Enter valid address','err');return;}openDM(addr);}
+function showConvList(){currentDMWallet=null;clearInterval(dmTimer);document.getElementById('convList').style.display='block';document.getElementById('convView').style.display='none';document.getElementById('dmBackBtn').style.display='none';document.getElementById('dmTitle').textContent='💬 Messages';loadConversations();}
 async function loadMessages(){
-  if(!currentDMWallet||!userAddr) return;
-  const el = document.getElementById('msgList');
-  const {data:msgs} = await sb.from('messages')
-    .select('*')
-    .or(`and(from_wallet.eq.${userAddr},to_wallet.eq.${currentDMWallet}),and(from_wallet.eq.${currentDMWallet},to_wallet.eq.${userAddr})`)
-    .order('created_at',{ascending:true});
-  if(!msgs||msgs.length===0){
-    el.innerHTML='<div style="text-align:center;color:var(--muted);padding:40px;font-size:14px;">No messages yet. Say hi! 👋</div>';
-    return;
-  }
-  const atBottom = el.scrollHeight - el.scrollTop <= el.clientHeight + 50;
-  el.innerHTML = msgs.map(m=>{
-    const mine = m.from_wallet === userAddr;
-    return `<div style="display:flex;justify-content:${mine?'flex-end':'flex-start'};">
-      <div style="max-width:70%;background:${mine?'var(--gold)':'var(--bg3)'};color:${mine?'#08090C':'var(--text)'};border-radius:${mine?'18px 18px 4px 18px':'18px 18px 18px 4px'};padding:10px 14px;font-size:14px;line-height:1.5;">
-        ${esc(m.content)}
-        ${!mine&&m.content.includes('challenges you to Battleship')?`
-          <div style="display:flex;gap:6px;margin-top:8px;">
-            <button onclick="acceptChallenge('${m.from_wallet}',event)" style="padding:6px 14px;background:var(--gold);color:#08090C;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:none;">⚔️ Accept</button>
-            <button onclick="declineChallengeDM('${m.from_wallet}',event)" style="padding:6px 12px;background:rgba(255,77,77,0.1);color:var(--red);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid rgba(255,77,77,.3);">✕ Decline</button>
-          </div>`:''}
-        <div style="font-size:10px;opacity:.6;margin-top:4px;text-align:${mine?'right':'left'};">${tAgo(m.created_at)}</div>
-      </div>
-    </div>`;
-  }).join('');
-  if(atBottom) el.scrollTop = el.scrollHeight;
+  if(!currentDMWallet||!userAddr)return;
+  const el=document.getElementById('msgList');
+  const {data:msgs}=await sb.from('messages').select('*').or('and(from_wallet.eq.'+userAddr+',to_wallet.eq.'+currentDMWallet+'),and(from_wallet.eq.'+currentDMWallet+',to_wallet.eq.'+userAddr+')').order('created_at',{ascending:true});
+  if(!msgs||msgs.length===0){el.innerHTML='<div style="text-align:center;color:var(--muted);padding:40px;">No messages yet 👋</div>';return;}
+  const atBottom=el.scrollHeight-el.scrollTop<=el.clientHeight+50;
+  el.innerHTML='';
+  msgs.forEach(function(m){
+    const mine=m.from_wallet===userAddr;
+    const wrap=document.createElement('div');
+    wrap.style.cssText='display:flex;justify-content:'+(mine?'flex-end':'flex-start')+';';
+    const bubble=document.createElement('div');
+    bubble.style.cssText='max-width:70%;background:'+(mine?'var(--gold)':'var(--bg3)')+';color:'+(mine?'#08090C':'var(--text)')+';border-radius:'+(mine?'18px 18px 4px 18px':'18px 18px 18px 4px')+';padding:10px 14px;font-size:14px;line-height:1.5;';
+    const txt=document.createElement('div');txt.textContent=m.content;bubble.appendChild(txt);
+    if(!mine&&m.content.includes('challenges you to Battleship')){
+      const btns=document.createElement('div');btns.style.cssText='display:flex;gap:6px;margin-top:8px;';
+      const ab=document.createElement('button');ab.textContent='⚔️ Accept';ab.style.cssText='padding:6px 14px;background:var(--gold);color:#08090C;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:none;';
+      ab.onclick=(function(fw){return function(e){acceptChallenge(fw,e);};})(m.from_wallet);
+      const db=document.createElement('button');db.textContent='✕ Decline';db.style.cssText='padding:6px 12px;background:rgba(255,77,77,0.1);color:var(--red);border-radius:8px;font-size:12px;cursor:pointer;border:1px solid rgba(255,77,77,.3);';
+      db.onclick=(function(fw){return function(e){declineChallengeDM(fw,e);};})(m.from_wallet);
+      btns.appendChild(ab);btns.appendChild(db);bubble.appendChild(btns);
+    }
+    const timeEl=document.createElement('div');timeEl.style.cssText='font-size:10px;opacity:.6;margin-top:4px;text-align:'+(mine?'right':'left')+';';timeEl.textContent=tAgo(m.created_at);bubble.appendChild(timeEl);
+    wrap.appendChild(bubble);el.appendChild(wrap);
+  });
+  if(atBottom)el.scrollTop=el.scrollHeight;
 }
-
-async function sendDM(){
-  if(!userAddr){showToast('Connect wallet first','err');return;}
-  if(!currentDMWallet) return;
-  const input = document.getElementById('msgInput');
-  const content = input.value.trim();
-  if(!content) return;
-  input.value = '';
-  try{
-    await sb.from('messages').insert({from_wallet:userAddr,to_wallet:currentDMWallet,content});
-    await createNotif(currentDMWallet,'dm');
-    loadMessages();
-  }catch(e){showToast('Failed to send','err');input.value=content;}
-}
+async function sendDM(){if(!userAddr){showToast('Connect wallet first','err');return;}if(!currentDMWallet)return;const input=document.getElementById('msgInput');const content=input.value.trim();if(!content)return;input.value='';try{await sb.from('messages').insert({from_wallet:userAddr,to_wallet:currentDMWallet,content});await createNotif(currentDMWallet,'dm');loadMessages();}catch(e){showToast('Failed','err');input.value=content;}}
+function openConversation(wallet){openDM(wallet);}
+function openDMWith(wallet){showTab('messages');setTimeout(function(){openDM(wallet);},300);}
 
 // ── STAKING ──
-async function loadStakingInfo(){
-  try{
-    const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');
-    const sc=new ethers.Contract(GATE_STAKING,STAKING_ABI,p);
-    const rp=await sc.rewardPool();
-    const ts=await sc.totalStaked();
-    document.getElementById('rewardPoolVal').textContent=parseFloat(ethers.formatEther(rp)).toFixed(0)+' GATE';
-    document.getElementById('totalStakedVal').textContent=parseFloat(ethers.formatEther(ts)).toFixed(2);
-    if(userAddr){
-      const [staked,pending]=await sc.getStakeInfo(userAddr);
-      document.getElementById('myStaked').textContent=parseFloat(ethers.formatEther(staked)).toFixed(2);
-      document.getElementById('myPending').textContent=parseFloat(ethers.formatEther(pending)).toFixed(4);
-    }
-  }catch(e){}
-}
-
+async function loadStakingInfo(){try{const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');const sc=new ethers.Contract(GATE_STAKING,STAKING_ABI,p);const [rp,ts]=await Promise.all([sc.rewardPool(),sc.totalStaked()]);document.getElementById('rewardPoolVal').textContent=parseFloat(ethers.formatEther(rp)).toFixed(0)+' GATE';document.getElementById('totalStakedVal').textContent=parseFloat(ethers.formatEther(ts)).toFixed(2);if(userAddr){const [staked,pending]=await sc.getStakeInfo(userAddr);document.getElementById('myStaked').textContent=parseFloat(ethers.formatEther(staked)).toFixed(2);document.getElementById('myPending').textContent=parseFloat(ethers.formatEther(pending)).toFixed(4);}}catch(e){}}
 let stakingTimer;
-async function stakeGATE(){
-  if(!userAddr){showToast('Connect wallet first','err');return;}
-  const amt=document.getElementById('stakeAmount').value;
-  if(!amt||parseFloat(amt)<=0){showToast('Enter amount','err');return;}
-  try{
-    await switchToLitVM();
-    const freshSigner=await provider.getSigner();
-    const gate=new ethers.Contract(GATE_TOKEN,GATE_ABI,freshSigner);
-    const sc=new ethers.Contract(GATE_STAKING,STAKING_ABI,freshSigner);
-    const amount=ethers.parseEther(String(amt));
-    showToast('Approving GATE...','ok');
-    const approveTx=await gate.approve(GATE_STAKING,amount);
-    await approveTx.wait();
-    showToast('Staking...','ok');
-    const stakeIface=new ethers.Interface(['function stake(uint256 amount)']);
-    const stakeData=stakeIface.encodeFunctionData('stake',[amount]);
-    const tx=await freshSigner.sendTransaction({to:GATE_STAKING,data:stakeData});
-    await tx.wait();
-    showToast('Staked successfully! 💎','ok');
-    document.getElementById('stakeAmount').value='';
-    loadStakingInfo();
-    loadGateBal();
-  }catch(e){showToast((e.reason||e.message||'Failed').slice(0,50),'err');}
-}
+async function stakeGATE(){if(!userAddr){showToast('Connect wallet first','err');return;}const amt=document.getElementById('stakeAmount').value;if(!amt||parseFloat(amt)<=0){showToast('Enter amount','err');return;}try{await switchToLitVM();const freshSigner=await provider.getSigner();const gate=new ethers.Contract(GATE_TOKEN,GATE_ABI,freshSigner);const amount=ethers.parseEther(String(amt));showToast('Approving GATE...','ok');await(await gate.approve(GATE_STAKING,amount)).wait();showToast('Staking...','ok');const iface=new ethers.Interface(['function stake(uint256 amount)']);await(await freshSigner.sendTransaction({to:GATE_STAKING,data:iface.encodeFunctionData('stake',[amount])})).wait();showToast('Staked! 💎','ok');loadStakingInfo();loadGateBal();}catch(e){showToast((e.reason||e.message||'Failed').slice(0,50),'err');}}
+async function claimGATE(){if(!userAddr){showToast('Connect wallet first','err');return;}try{await switchToLitVM();const freshSigner=await provider.getSigner();const iface=new ethers.Interface(['function claim()']);await(await freshSigner.sendTransaction({to:GATE_STAKING,data:iface.encodeFunctionData('claim',[])})).wait();showToast('Rewards claimed! 🎉','ok');loadStakingInfo();loadGateBal();}catch(e){showToast((e.reason||e.message||'Failed').slice(0,50),'err');}}
+async function unstakeGATE(){if(!userAddr){showToast('Connect wallet first','err');return;}try{await switchToLitVM();const freshSigner=await provider.getSigner();const iface=new ethers.Interface(['function unstake()']);await(await freshSigner.sendTransaction({to:GATE_STAKING,data:iface.encodeFunctionData('unstake',[])})).wait();showToast('Unstaked! 💰','ok');loadStakingInfo();loadGateBal();}catch(e){showToast((e.reason||e.message||'Failed').slice(0,50),'err');}}
 
-async function claimGATE(){
-  if(!userAddr){showToast('Connect wallet first','err');return;}
-  try{
-    await switchToLitVM();
-    const freshSigner=await provider.getSigner();
-    showToast('Claiming rewards...','ok');
-    const claimIface=new ethers.Interface(['function claim()']);
-    const tx=await freshSigner.sendTransaction({to:GATE_STAKING,data:claimIface.encodeFunctionData('claim',[])});
-    await tx.wait();
-    showToast('Rewards claimed! 🎉','ok');
-    loadStakingInfo();
-    loadGateBal();
-  }catch(e){showToast((e.reason||e.message||'Failed').slice(0,50),'err');}
-}
-
-async function unstakeGATE(){
-  if(!userAddr){showToast('Connect wallet first','err');return;}
-  try{
-    await switchToLitVM();
-    const freshSigner=await provider.getSigner();
-    showToast('Unstaking...','ok');
-    const unstakeIface=new ethers.Interface(['function unstake()']);
-    const unstakeData=unstakeIface.encodeFunctionData('unstake',[]);
-    const tx=await freshSigner.sendTransaction({to:GATE_STAKING,data:unstakeData});
-    await tx.wait();
-    showToast('Unstaked! Tokens returned 💰','ok');
-    loadStakingInfo();
-    loadGateBal();
-  }catch(e){showToast((e.reason||e.message||'Failed').slice(0,50),'err');}
-}
-
-// ── BELL NOTIFICATIONS ──
-async function checkBellFollowers(authorWallet){
-  // Get followers who have bell on
-  try{
-    const {data:followers}=await sb.from('follows').select('follower_wallet').eq('following_wallet',authorWallet);
-    if(!followers) return;
-    for(const f of followers){
-      // We can't check other users localStorage, but we create a DB notification
-      // The notification badge will show when they open the app
-      await createNotif(f.follower_wallet,'like',null); // reuse notif system
-    }
-  }catch(e){}
-}
+// ── BELL ──
+function getBellList(){try{return JSON.parse(localStorage.getItem('og_bells_'+(userAddr||''))||'[]');}catch{return [];}}
+function saveBellList(list){try{localStorage.setItem('og_bells_'+(userAddr||''),JSON.stringify(list));}catch{}}
+function toggleBell(wallet,btnEl){const list=getBellList();const idx=list.indexOf(wallet);if(idx>=0){list.splice(idx,1);btnEl.style.color='var(--muted)';btnEl.style.borderColor='var(--border)';btnEl.style.background='var(--bg3)';showToast('Notifications off','ok');}else{list.push(wallet);btnEl.style.color='var(--gold)';btnEl.style.borderColor='var(--gold)';btnEl.style.background='rgba(245,200,66,0.1)';showToast('Notifications on! 🔔','ok');}saveBellList(list);}
+function removeBellNotif(wallet){const list=getBellList();const idx=list.indexOf(wallet);if(idx>=0){list.splice(idx,1);saveBellList(list);}}
+function isBellOn(wallet){return getBellList().includes(wallet);}
+async function checkBellFollowers(authorWallet){try{const {data:followers}=await sb.from('follows').select('follower_wallet').eq('following_wallet',authorWallet);if(!followers)return;for(const f of followers){await createNotif(f.follower_wallet,'like',null);}}catch(e){}}
 
 // ── REPOST ──
-async function repostPost(postId, authorWallet, btn){
-  if(!userAddr){showToast('Connect wallet first','err');return;}
-  if(userAddr===authorWallet.toLowerCase()){showToast("Can't repost your own post",'err');return;}
-  try{
-    // Check if already reposted
-    const {data:existing}=await sb.from('posts').select('id').eq('repost_of',postId).eq('author_wallet',userAddr).single();
-    if(existing){showToast('Already reposted','err');return;}
-    // Get original post
-    const {data:origPost}=await sb.from('posts').select('*,users!posts_author_wallet_fkey(username)').eq('id',postId).single();
-    if(!origPost) return;
-    // Create repost
-    await sb.from('posts').insert({
-      author_wallet: userAddr,
-      content: origPost.content,
-      image_urls: origPost.image_urls||[],
-      repost_of: postId,
-      repost_by: userAddr,
-      repost_by_name: currentUser?.username||sAddr(userAddr),
-      likes_count: 0,
-      reposts_count: 0
-    });
-    // Update reposts count on original
-    const newCount=(parseInt(document.getElementById('rpcnt-'+postId)?.textContent||'0'))+1;
-    await sb.from('posts').update({reposts_count:newCount}).eq('id',postId);
-    if(document.getElementById('rpcnt-'+postId)) document.getElementById('rpcnt-'+postId).textContent=newCount;
-    btn.style.color='var(--green)';
-    showToast('🔁 Reposted!','ok');
-    // Notify author
-    await createNotif(authorWallet,'repost',postId);
-    loadPosts();
-  }catch(e){showToast((e.reason||e.message||'Failed').slice(0,50),'err');}
-}
+async function repostPost(postId,authorWallet,btn){if(!userAddr){showToast('Connect wallet first','err');return;}if(userAddr===authorWallet.toLowerCase()){showToast("Cannot repost own post",'err');return;}try{const {data:existing}=await sb.from('posts').select('id').eq('repost_of',postId).eq('author_wallet',userAddr).single();if(existing){showToast('Already reposted','err');return;}const {data:origPost}=await sb.from('posts').select('*').eq('id',postId).single();if(!origPost)return;await sb.from('posts').insert({author_wallet:userAddr,content:origPost.content,image_urls:origPost.image_urls||[],repost_of:postId,repost_by:userAddr,repost_by_name:currentUser?.username||sAddr(userAddr),likes_count:0,reposts_count:0});const newCount=(parseInt(document.getElementById('rpcnt-'+postId)?.textContent||'0'))+1;await sb.from('posts').update({reposts_count:newCount}).eq('id',postId);if(document.getElementById('rpcnt-'+postId))document.getElementById('rpcnt-'+postId).textContent=newCount;btn.style.color='var(--green)';showToast('🔁 Reposted!','ok');await createNotif(authorWallet,'repost',postId);loadPosts();}catch(e){showToast('Failed','err');}}
 
 // ── REWARDS POOL ──
-async function loadRewardsPool(){
-  try{
-    const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');
-    const r=new ethers.Contract(GATE_REWARDS,REWARDS_ABI,p);
-    const bal=await r.poolBalance();
-    const el=document.getElementById('rewardsPoolBal');
-    if(el) el.textContent=parseFloat(ethers.formatEther(bal)).toFixed(0)+' GATE';
-  }catch(e){}
-}
+async function loadRewardsPool(){try{const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');const r=new ethers.Contract(GATE_REWARDS,REWARDS_ABI,p);const bal=await r.poolBalance();const el=document.getElementById('rewardsPoolBal');if(el)el.textContent=parseFloat(ethers.formatEther(bal)).toFixed(0)+' GATE';}catch(e){}}
 
 // ── HELPERS ──
 let toastT;
@@ -4589,75 +3513,23 @@ function sAddr(a){return a?a.slice(0,6)+'...'+a.slice(-4):'';}
 function esc(s){return s?s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'):'';}
 function tAgo(ts){const d=(Date.now()-new Date(ts))/1000;if(d<60)return'now';if(d<3600)return Math.floor(d/60)+'m';if(d<86400)return Math.floor(d/3600)+'h';return Math.floor(d/86400)+'d';}
 
-// ── BACKDROP CLOSE ──
+// ── INIT ──
 document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open');}));
-
-// ── FADE IN ──
 const obs=new IntersectionObserver(e=>e.forEach(x=>{if(x.isIntersecting){x.target.classList.add('in');obs.unobserve(x.target);}}),{threshold:0.08});
 document.querySelectorAll('.fade').forEach(el=>obs.observe(el));
-
-// ── SUPPLY BARS ──
 const sObs=new IntersectionObserver(e=>e.forEach(x=>{if(x.isIntersecting)x.target.querySelectorAll('.supply-fill[data-target]').forEach(b=>{setTimeout(()=>b.style.width=b.dataset.target,300)});}),{threshold:0.2});
 document.querySelectorAll('.pass-card').forEach(c=>sObs.observe(c));
-
-// ── PWA INSTALL ──
-let pwaPrompt = null;
-window.addEventListener('beforeinstallprompt', e => {
-  e.preventDefault();
-  pwaPrompt = e;
-  const btn = document.getElementById('pwaInstallBtn');
-  if(btn) btn.style.display = 'block';
-});
-
-async function installPWA(){
-  if(!pwaPrompt) return;
-  pwaPrompt.prompt();
-  const result = await pwaPrompt.userChoice;
-  if(result.outcome === 'accepted'){
-    showToast('App installed! 📲','ok');
-    document.getElementById('pwaInstallBtn').style.display='none';
-  }
-  pwaPrompt = null;
-}
-
-// ── INIT ──
+let pwaPrompt=null;
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();pwaPrompt=e;const btn=document.getElementById('pwaInstallBtn');if(btn)btn.style.display='block';});
+async function installPWA(){if(!pwaPrompt)return;pwaPrompt.prompt();const result=await pwaPrompt.userChoice;if(result.outcome==='accepted')document.getElementById('pwaInstallBtn').style.display='none';pwaPrompt=null;}
 loadPosts();
 window.ethereum?.on('accountsChanged',()=>location.reload());
 window.ethereum?.on('chainChanged',()=>location.reload());
-
-// Auto-connect if previously connected
-async function tryAutoConnect(){
-  if(!window.ethereum) return;
-  try{
-    // Check if already authorized (no popup)
-    const accounts = await window.ethereum.request({method:'eth_accounts'});
-    if(accounts && accounts.length > 0){
-      provider = new ethers.BrowserProvider(window.ethereum);
-      signer = await provider.getSigner();
-      userAddr = (await signer.getAddress()).toLowerCase();
-      const btn = document.getElementById('connectBtn');
-      btn.classList.add('connected');
-      btn.innerHTML = `<div class="w-dot"></div>${userAddr.slice(0,6)}...${userAddr.slice(-4)}`;
-      document.getElementById('newPostBtn').classList.add('show');
-      document.getElementById('composer').classList.add('show');
-      await ensureUser();
-      loadGateBal();
-      loadPosts();
-      updateNotifBadge();
-      loadRewardsPool();
-    }
-  }catch(e){}
-}
+async function tryAutoConnect(){if(!window.ethereum)return;try{const accounts=await window.ethereum.request({method:'eth_accounts'});if(accounts&&accounts.length>0){provider=new ethers.BrowserProvider(window.ethereum);signer=await provider.getSigner();userAddr=(await signer.getAddress()).toLowerCase();const btn=document.getElementById('connectBtn');btn.classList.add('connected');btn.innerHTML='<div class="w-dot"></div>'+userAddr.slice(0,6)+'...'+userAddr.slice(-4);document.getElementById('newPostBtn').classList.add('show');document.getElementById('composer').classList.add('show');await ensureUser();loadGateBal();loadPosts();updateNotifBadge();loadRewardsPool();}}catch(e){}}
 tryAutoConnect();
 </script>
 <script>
-if('serviceWorker' in navigator){
-  window.addEventListener('load', ()=>{
-    navigator.serviceWorker.register('/sw.js')
-      .then(()=>console.log('SW registered'))
-      .catch(e=>console.log('SW error', e));
-  });
-}
+if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('/sw.js').then(()=>console.log('SW registered')).catch(e=>console.log('SW error',e));});}
 </script>
 </body>
 </html>
