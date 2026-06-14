@@ -2655,6 +2655,7 @@ async function createBattleGame(){
     await switchToLitVM();
     const amtWei=ethers.parseEther(amt);
     const freshSigner=await provider.getSigner();
+    let contractGameId=0;
     if(bsToken==='GATE'){
       const gate=new ethers.Contract(GATE_TOKEN,GATE_ABI,freshSigner);
       showToast('Approving GATE...','ok');
@@ -2662,8 +2663,8 @@ async function createBattleGame(){
       showToast('Creating game...','ok');
       const coder=ethers.AbiCoder.defaultAbiCoder();
       const sel=ethers.id('createGameGATE(uint256)').slice(0,10);
-      const data=sel+coder.encode(['uint256'],[amtWei]).slice(2);
-      const tx=await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data,gasLimit:400000n});
+      const txdata=sel+coder.encode(['uint256'],[amtWei]).slice(2);
+      const tx=await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data:txdata,gasLimit:400000n});
       await tx.wait();
     } else {
       showToast('Creating game...','ok');
@@ -2671,21 +2672,15 @@ async function createBattleGame(){
       const tx=await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data:sel,value:amtWei,gasLimit:400000n});
       await tx.wait();
     }
-    // Read gameCount from contract to get game ID
-    let contractGameId=0;
-    try{
-      const cntData=ethers.id('gameCount()').slice(0,10);
-      const res=await provider.call({to:BATTLESHIP_ADDR,data:cntData});
-      contractGameId=Number(BigInt(res));
-    }catch{}
-    // Save to DB
-    await sb.from('battleship_games').insert({
+    // Save to DB immediately after tx confirmed
+    const {data:newGame,error:insErr}=await sb.from('battleship_games').insert({
       player1_wallet:userAddr,
       bet_amount:amt,
       bet_token:bsToken,
       status:'waiting',
       contract_game_id:contractGameId
-    });
+    }).select().single();
+    if(insErr){showToast('DB error: '+insErr.message,'err');return;}
     showToast('Game created! ⚓','ok');
     if(document.getElementById('bsBetAmt')) document.getElementById('bsBetAmt').value='';
     loadBattleLobby();
