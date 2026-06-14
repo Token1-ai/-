@@ -2661,25 +2661,30 @@ async function createBattleGame(){
       const gate=new ethers.Contract(GATE_TOKEN,GATE_ABI,freshSigner);
       showToast('Approving GATE...','ok');
       await (await gate.approve(BATTLESHIP_ADDR,amtWei)).wait();
-      showToast('Creating game...','ok');
+      showToast('Creating game on contract...','ok');
       const coder=ethers.AbiCoder.defaultAbiCoder();
       const sel=ethers.id('createGameGATE(uint256)').slice(0,10);
       const data=sel+coder.encode(['uint256'],[amtWei]).slice(2);
-      const receipt=await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data,gasLimit:400000n})).wait();
-      const evSig=ethers.id('GameCreated(uint256,address,uint256,uint8)');
-      for(const log of receipt.logs){
-        if(log.topics[0]===evSig){contractGameId=Number(BigInt(log.topics[1]));break;}
-      }
-      // Save to DB after successful contract call
+      const tx=await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data,gasLimit:400000n});
+      const receipt=await tx.wait();
+      // Get gameCount from contract to find our game ID
+      try{
+        const cntSel=ethers.id('gameCount()').slice(0,10);
+        const cntResult=await provider.call({to:BATTLESHIP_ADDR,data:cntSel});
+        contractGameId=Number(BigInt(cntResult));
+      }catch{}
+      showToast('Saving to lobby...','ok');
       await sb.from('battleship_games').insert({player1_wallet:userAddr,bet_amount:amt,bet_token:'GATE',status:'waiting',contract_game_id:contractGameId});
     } else {
-      showToast('Creating game...','ok');
+      showToast('Creating game on contract...','ok');
       const sel=ethers.id('createGameZK()').slice(0,10);
-      const receipt=await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data:sel,value:amtWei,gasLimit:400000n})).wait();
-      const evSig=ethers.id('GameCreated(uint256,address,uint256,uint8)');
-      for(const log of receipt.logs){
-        if(log.topics[0]===evSig){contractGameId=Number(BigInt(log.topics[1]));break;}
-      }
+      const tx=await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data:sel,value:amtWei,gasLimit:400000n});
+      await tx.wait();
+      try{
+        const cntSel=ethers.id('gameCount()').slice(0,10);
+        const cntResult=await provider.call({to:BATTLESHIP_ADDR,data:cntSel});
+        contractGameId=Number(BigInt(cntResult));
+      }catch{}
       await sb.from('battleship_games').insert({player1_wallet:userAddr,bet_amount:amt,bet_token:'zkLTC',status:'waiting',contract_game_id:contractGameId});
     }
     showToast('Game created! ⚓ Visible in lobby now','ok');
