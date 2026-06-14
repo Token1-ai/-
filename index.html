@@ -2642,52 +2642,74 @@ async function bsCancelGame(gameDbId){
 async function createBattleGame(){
   if(!userAddr){showToast('Connect wallet first','err');return;}
   if(bsMode==='free'){
-    const {data:g}=await sb.from('battleship_games')
-      .insert({player1_wallet:userAddr,bet_amount:'0',bet_token:'FREE',status:'waiting',contract_game_id:0})
-      .select().single();
+    const {error:e}=await sb.from('battleship_games').insert({
+      player1_wallet:userAddr,bet_amount:'0',bet_token:'FREE',
+      status:'waiting',contract_game_id:0
+    });
+    if(e){showToast('Error: '+e.message,'err');return;}
     showToast('Free game created! ⚓','ok');
     loadBattleLobby();
     return;
   }
-  const amt=document.getElementById('bsBetAmt')?document.getElementById('bsBetAmt').value.trim():'';
+  const amtEl=document.getElementById('bsBetAmt');
+  const amt=amtEl?amtEl.value.trim():'';
   if(!amt||parseFloat(amt)<=0){showToast('Enter bet amount','err');return;}
+
+  // STEP 1: Save to DB first
+  showToast('Saving game...','ok');
+  const {data:newGame,error:dbErr}=await sb.from('battleship_games').insert({
+    player1_wallet:userAddr,
+    bet_amount:amt,
+    bet_token:bsToken,
+    status:'waiting',
+    contract_game_id:0
+  }).select().single();
+  
+  if(dbErr){showToast('DB error: '+dbErr.message,'err');return;}
+  showToast('Game in lobby! ⚓ Now staking...','ok');
+  loadBattleLobby();
+
+  // STEP 2: Call contract (optional - if fails, game still shows in lobby)
   try{
     await switchToLitVM();
     const amtWei=ethers.parseEther(amt);
     const freshSigner=await provider.getSigner();
-    let contractGameId=0;
     if(bsToken==='GATE'){
       const gate=new ethers.Contract(GATE_TOKEN,GATE_ABI,freshSigner);
       showToast('Approving GATE...','ok');
       await (await gate.approve(BATTLESHIP_ADDR,amtWei)).wait();
-      showToast('Creating game...','ok');
+      showToast('Staking on contract...','ok');
       const coder=ethers.AbiCoder.defaultAbiCoder();
       const sel=ethers.id('createGameGATE(uint256)').slice(0,10);
       const txdata=sel+coder.encode(['uint256'],[amtWei]).slice(2);
       const tx=await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data:txdata,gasLimit:400000n});
-      await tx.wait();
+      const receipt=await tx.wait();
+      // Get contract game ID
+      let cid=0;
+      try{
+        const cntSel=ethers.id('gameCount()').slice(0,10);
+        const r=await provider.call({to:BATTLESHIP_ADDR,data:cntSel});
+        cid=Number(BigInt(r));
+      }catch{}
+      // Update DB with contract ID
+      if(cid>0&&newGame){
+        await sb.from('battleship_games').update({contract_game_id:cid}).eq('id',newGame.id);
+      }
+      showToast('Staked! Game ready ⚔️','ok');
     } else {
-      showToast('Creating game...','ok');
       const sel=ethers.id('createGameZK()').slice(0,10);
-      const tx=await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data:sel,value:amtWei,gasLimit:400000n});
+      const amtWei2=ethers.parseEther(amt);
+      const freshSigner2=await provider.getSigner();
+      const tx=await freshSigner2.sendTransaction({to:BATTLESHIP_ADDR,data:sel,value:amtWei2,gasLimit:400000n});
       await tx.wait();
+      showToast('Staked! Game ready ⚔️','ok');
     }
-    // Save to DB immediately after tx confirmed
-    const {data:newGame,error:insErr}=await sb.from('battleship_games').insert({
-      player1_wallet:userAddr,
-      bet_amount:amt,
-      bet_token:bsToken,
-      status:'waiting',
-      contract_game_id:contractGameId
-    }).select().single();
-    if(insErr){showToast('DB error: '+insErr.message,'err');return;}
-    showToast('Game created! ⚓','ok');
-    if(document.getElementById('bsBetAmt')) document.getElementById('bsBetAmt').value='';
-    loadBattleLobby();
-  }catch(e){showToast((e.reason||e.message||'Failed').slice(0,60),'err');}
+  }catch(contractErr){
+    showToast('Game visible in lobby (stake failed: '+( contractErr.reason||contractErr.message||'').slice(0,30)+')','err');
+  }
 }
 
-// ── JOIN GAME ──
+
 async function bsJoinGame(gameDbId,betAmt,betToken){
   if(!userAddr){showToast('Connect wallet first','err');return;}
   try{
