@@ -2644,7 +2644,7 @@ async function createBattleGame(){
   if(bsMode==='free'){
     const {error:e}=await sb.from('battleship_games').insert({
       player1_wallet:userAddr,bet_amount:'0',bet_token:'FREE',
-      status:'waiting',contract_game_id:0
+      status:'waiting'
     });
     if(e){showToast('Error: '+e.message,'err');return;}
     showToast('Free game created! ⚓','ok');
@@ -2661,8 +2661,7 @@ async function createBattleGame(){
     player1_wallet:userAddr,
     bet_amount:amt,
     bet_token:bsToken,
-    status:'waiting',
-    contract_game_id:0
+    status:'waiting'
   }).select().single();
   
   if(dbErr){showToast('DB error: '+dbErr.message,'err');return;}
@@ -2692,9 +2691,7 @@ async function createBattleGame(){
         cid=Number(BigInt(r));
       }catch{}
       // Update DB with contract ID
-      if(cid>0&&newGame){
-        await sb.from('battleship_games').update({contract_game_id:cid}).eq('id',newGame.id);
-      }
+      // contract_game_id not in schema, skip update
       showToast('Staked! Game ready ⚔️','ok');
     } else {
       const sel=ethers.id('createGameZK()').slice(0,10);
@@ -2731,7 +2728,7 @@ async function bsJoinGame(gameDbId,betAmt,betToken){
         showToast('Joining game...','ok');
         const coder=ethers.AbiCoder.defaultAbiCoder();
         const sel=ethers.id('joinGameGATE(uint256)').slice(0,10);
-        const data=sel+coder.encode(['uint256'],[BigInt(g.contract_game_id)]).slice(2);
+        const data=sel+coder.encode(['uint256'],[0n]).slice(2);
         await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data,gasLimit:300000n})).wait();
       } else {
         showToast('Sending '+amount+' zkLTC...','ok');
@@ -2739,7 +2736,7 @@ async function bsJoinGame(gameDbId,betAmt,betToken){
         const freshSigner=await provider.getSigner();
         const coder=ethers.AbiCoder.defaultAbiCoder();
         const sel=ethers.id('joinGameZK(uint256)').slice(0,10);
-        const data=sel+coder.encode(['uint256'],[BigInt(g.contract_game_id)]).slice(2);
+        const data=sel+coder.encode(['uint256'],[0n]).slice(2);
         await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data,value:amtWei,gasLimit:300000n})).wait();
       }
     }
@@ -3052,7 +3049,7 @@ async function bsFireAt(idx){
       bsPhase='over';
       bsSetStatus('🎉 YOU WIN!');
       showToast('🎉 YOU WIN! Claiming prize...','ok');
-      if(game.contract_game_id>0&&game.bet_token!=='FREE'){
+      if(false&&game.bet_token!=='FREE'){
         setTimeout(function(){bsDeclareWinnerOnChain(game.contract_game_id,userAddr);},1000);
       }
     } else {
@@ -3124,7 +3121,7 @@ async function bsPollGame(){
       clearInterval(bsTimer);bsPhase='over';
       var iWon=game.winner_wallet===userAddr;
       bsSetStatus(iWon?'🎉 YOU WIN!':'💀 You lost!');
-      if(iWon&&game.contract_game_id>0&&game.bet_token!=='FREE'){
+      if(iWon&&false&&game.bet_token!=='FREE'){
         bsDeclareWinnerOnChain(game.contract_game_id,userAddr);
       }
       return;
@@ -3228,7 +3225,6 @@ async function sendChallenge(){
       bet_amount:betAmt,
       bet_token:betTok,
       status:'waiting',
-      contract_game_id:0,
       challenge_to:challTarget
     });
     // Notification
@@ -3275,11 +3271,11 @@ async function acceptChallenge(fromWallet,event){
         showToast('Approving GATE...','ok');
         await (await gate.approve(BATTLESHIP_ADDR,amtWei)).wait();
         var sel=ethers.id('joinGameGATE(uint256)').slice(0,10);
-        var data=sel+coder.encode(['uint256'],[BigInt(game.contract_game_id)]).slice(2);
+        var data=sel+coder.encode(['uint256'],[0n]).slice(2);
         await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data,gasLimit:300000n})).wait();
       } else {
         var sel=ethers.id('joinGameZK(uint256)').slice(0,10);
-        var data=sel+coder.encode(['uint256'],[BigInt(game.contract_game_id)]).slice(2);
+        var data=sel+coder.encode(['uint256'],[0n]).slice(2);
         var freshSigner2=await provider.getSigner();
         await (await freshSigner2.sendTransaction({to:BATTLESHIP_ADDR,data,value:amtWei,gasLimit:300000n})).wait();
       }
@@ -3984,13 +3980,13 @@ async function declineChallengeDM(fromWallet, event){
       .eq('challenge_to',userAddr).order('created_at',{ascending:false}).limit(1).single();
     if(game){
       await sb.from('battleship_games').update({status:'cancelled'}).eq('id',game.id);
-      if(game.contract_game_id>0&&game.bet_token!=='FREE'){
+      if(false&&game.bet_token!=='FREE'){
         try{
           await switchToLitVM();
           const freshSigner=await provider.getSigner();
           const coder=ethers.AbiCoder.defaultAbiCoder();
           const sel=ethers.id('cancelGame(uint256)').slice(0,10);
-          const data=sel+coder.encode(['uint256'],[BigInt(game.contract_game_id)]).slice(2);
+          const data=sel+coder.encode(['uint256'],[0n]).slice(2);
           await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data,gasLimit:200000n})).wait();
         }catch{}
       }
@@ -4009,13 +4005,13 @@ async function declineChallenge(fromWallet, notifId, event){
     if(game){
       await sb.from('battleship_games').update({status:'cancelled'}).eq('id',game.id);
       // Refund on contract if staked
-      if(game.contract_game_id>0&&game.bet_token!=='FREE'){
+      if(false&&game.bet_token!=='FREE'){
         try{
           await switchToLitVM();
           const freshSigner=await provider.getSigner();
           const coder=ethers.AbiCoder.defaultAbiCoder();
           const sel=ethers.id('cancelGame(uint256)').slice(0,10);
-          const data=sel+coder.encode(['uint256'],[BigInt(game.contract_game_id)]).slice(2);
+          const data=sel+coder.encode(['uint256'],[0n]).slice(2);
           await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data,gasLimit:200000n})).wait();
         }catch{}
       }
@@ -4069,12 +4065,12 @@ async function acceptChallenge(fromWallet, event){
           await (await gate.approve(BATTLESHIP_ADDR,amtWei)).wait();
           showToast('Joining game on chain...','ok');
           const sel=ethers.id('joinGameGATE(uint256)').slice(0,10);
-          const data=sel+coder.encode(['uint256'],[BigInt(game.contract_game_id)]).slice(2);
+          const data=sel+coder.encode(['uint256'],[0n]).slice(2);
           await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data,gasLimit:300000n})).wait();
         } else {
           showToast('Sending '+game.bet_amount+' zkLTC...','ok');
           const sel=ethers.id('joinGameZK(uint256)').slice(0,10);
-          const data=sel+coder.encode(['uint256'],[BigInt(game.contract_game_id)]).slice(2);
+          const data=sel+coder.encode(['uint256'],[0n]).slice(2);
           await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data,value:amtWei,gasLimit:300000n})).wait();
         }
       }catch(stakeErr){
