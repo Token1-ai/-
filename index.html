@@ -520,8 +520,8 @@ textarea.form-inp{resize:vertical;min-height:80px;}
       <button class="btn-outline" onclick="openMintModal('gold')">Get Gold Pass — $9</button>
     </div>
     <div class="hero-numbers">
-      <div><div class="hero-num">50K</div><div class="hero-num-label">Gold Pass supply</div></div>
-      <div><div class="hero-num">100K</div><div class="hero-num-label">Silver Pass supply</div></div>
+      <div><div class="hero-num">3K</div><div class="hero-num-label">Gold Pass supply</div></div>
+      <div><div class="hero-num">5K</div><div class="hero-num-label">Silver Pass supply</div></div>
       <div><div class="hero-num">0.1</div><div class="hero-num-label">GATE per like</div></div>
       <div><div class="hero-num">0%</div><div class="hero-num-label">Staking fee</div></div>
     </div>
@@ -550,8 +550,8 @@ textarea.form-inp{resize:vertical;min-height:80px;}
           <div class="pass-price">$0</div>
           <div class="pass-price-note">Always free — just connect your wallet</div>
           <ul class="pass-features">
-            <li><span class="feat-icon">✓</span>6 posts per day</li>
-            <li><span class="feat-icon">✓</span>2 images per post</li>
+            <li><span class="feat-icon">✓</span>3 posts per day</li>
+            <li><span class="feat-icon">✓</span>0 images per post</li>
             <li><span class="feat-icon">✓</span>Earn GATE from likes</li>
             <li><span class="feat-icon">✓</span>Trade on Easy Swap DEX</li>
             <li><span class="feat-icon">✓</span>Stake GATE tokens</li>
@@ -562,10 +562,10 @@ textarea.form-inp{resize:vertical;min-height:80px;}
           <div class="pass-top"><div class="pass-tier">🥈 Silver</div></div>
           <div class="pass-price">$0.90</div>
           <div class="pass-price-note">Paid in BNB · live rate from Chainlink</div>
-          <div class="pass-supply"><div class="supply-track"><div class="supply-fill" data-target="2%"></div></div><div class="supply-text">100,000 max</div></div>
+          <div class="pass-supply"><div class="supply-track"><div class="supply-fill" data-target="2%"></div></div><div class="supply-text" id="silverSupply">5,000 max</div></div>
           <ul class="pass-features">
-            <li><span class="feat-icon">✓</span>20 posts per day</li>
-            <li><span class="feat-icon">✓</span>10 images per post</li>
+            <li><span class="feat-icon">✓</span>10 posts per day</li>
+            <li><span class="feat-icon">✓</span>3 images per post</li>
             <li><span class="feat-icon">✓</span>Silver badge 🥈</li>
             <li><span class="feat-icon">✓</span>+30% GATE rewards</li>
             <li><span class="feat-icon">✓</span>Early access to features</li>
@@ -576,12 +576,12 @@ textarea.form-inp{resize:vertical;min-height:80px;}
           <div class="pass-top"><div class="pass-tier">🥇 Gold</div><div class="pass-best">Best value</div></div>
           <div class="pass-price">$9</div>
           <div class="pass-price-note">Paid in BNB · live rate from Chainlink</div>
-          <div class="pass-supply"><div class="supply-track"><div class="supply-fill" data-target="1%"></div></div><div class="supply-text">50,000 max</div></div>
+          <div class="pass-supply"><div class="supply-track"><div class="supply-fill" data-target="1%"></div></div><div class="supply-text" id="goldSupply">3,000 max</div></div>
           <ul class="pass-features">
             <li><span class="feat-icon">✓</span>Unlimited posts & images</li>
             <li><span class="feat-icon">✓</span>VIP badge 🥇</li>
             <li><span class="feat-icon">✓</span>+100% GATE rewards (2×)</li>
-            <li><span class="feat-icon">✓</span>Lifetime GATE presale access</li>
+            <li><span class="feat-icon">✓</span>All new features FREE forever</li>
             <li><span class="feat-icon">✓</span>Free token creation on mainnet</li>
           </ul>
           <button class="pass-mint-btn" onclick="openMintModal('gold')">Mint Gold Pass</button>
@@ -730,7 +730,7 @@ textarea.form-inp{resize:vertical;min-height:80px;}
             <div id="imgPreviews" class="img-previews"></div>
             <div class="comp-footer">
               <div style="display:flex;align-items:center;gap:8px;">
-                <button class="upload-btn" onclick="document.getElementById('imgInput').click()" title="Add photo">🖼️</button>
+                <button class="upload-btn" onclick="checkImgUpload()" title="Add photo">🖼️</button>
                 <span class="char-cnt" id="charCnt">0/500</span>
                 <span class="uploading-indicator" id="uploadingTxt" style="display:none;">Uploading...</span>
               </div>
@@ -1848,10 +1848,19 @@ async function uploadToPinata(file){
 
 
 
+function checkImgUpload(){
+  const passType=currentUser?.pass_type;
+  if(!passType||passType==='free'||!passType){
+    showToast('Images require Silver or Gold Pass 🥈','err');
+    return;
+  }
+  document.getElementById('imgInput').click();
+}
+
 async function handleImages(input){
   const files = Array.from(input.files);
   if(files.length === 0) return;
-  const maxImgs = currentUser?.pass_type === 'gold' ? 10 : currentUser?.pass_type === 'silver' ? 10 : 2;
+  const maxImgs = currentUser?.pass_type === 'gold' ? 20 : currentUser?.pass_type === 'silver' ? 3 : 0;
   if(pendingImages.length + files.length > maxImgs){
     showToast('Max ' + maxImgs + ' images allowed','err'); return;
   }
@@ -1886,6 +1895,18 @@ async function createPost(){
   if(!userAddr){showToast('Connect wallet first','err');return;}
   const content=document.getElementById('postText').value.trim();
   if(!content) return;
+  // Check daily post limit
+  const passType=currentUser?.pass_type;
+  const maxPosts=passType==='gold'?999:passType==='silver'?10:3;
+  const today=new Date();today.setHours(0,0,0,0);
+  const {count:todayPosts}=await sb.from('posts').select('*',{count:'exact',head:true})
+    .eq('author_wallet',userAddr).gte('created_at',today.toISOString());
+  if(todayPosts>=maxPosts){
+    if(passType==='gold') showToast('Daily limit reached','err');
+    else if(passType==='silver') showToast('Silver limit: 10 posts/day. Upgrade to Gold for unlimited!','err');
+    else showToast('Free limit: 3 posts/day. Get Silver or Gold Pass for more!','err');
+    return;
+  }
   const btn=document.getElementById('postBtn');
   btn.disabled=true; btn.textContent='Posting...';
   try{
@@ -3792,12 +3813,42 @@ function sAddr(a){return a?a.slice(0,6)+'...'+a.slice(-4):'';}
 function esc(s){return s?s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'):'';}
 function tAgo(ts){const d=(Date.now()-new Date(ts))/1000;if(d<60)return'now';if(d<3600)return Math.floor(d/60)+'m';if(d<86400)return Math.floor(d/3600)+'h';return Math.floor(d/86400)+'d';}
 
+// ── SUPPLY COUNTS ──
+async function loadPassSupply(){
+  try{
+    const p=new ethers.JsonRpcProvider('https://bsc-dataseed.binance.org/');
+    const abi=['function totalSupply() view returns(uint256)','function MAX_SUPPLY() view returns(uint256)'];
+    const gold=new ethers.Contract(GOLD_PASS,abi,p);
+    const silver=new ethers.Contract(SILVER_PASS,abi,p);
+    const [gMinted,gMax,sMinted,sMax]=await Promise.all([
+      gold.totalSupply().catch(()=>0n),
+      gold.MAX_SUPPLY().catch(()=>3000n),
+      silver.totalSupply().catch(()=>0n),
+      silver.MAX_SUPPLY().catch(()=>5000n),
+    ]);
+    const gLeft=Number(gMax)-Number(gMinted);
+    const sLeft=Number(sMax)-Number(sMinted);
+    const gEl=document.getElementById('goldSupply');
+    const sEl=document.getElementById('silverSupply');
+    if(gEl)gEl.textContent=gLeft.toLocaleString()+' / 3,000 remaining';
+    if(sEl)sEl.textContent=sLeft.toLocaleString()+' / 5,000 remaining';
+    // Update supply bar
+    document.querySelectorAll('.pass-card.gold .supply-fill').forEach(b=>{
+      b.style.width=Math.min(100,(Number(gMinted)/3000)*100)+'%';
+    });
+    document.querySelectorAll('.pass-card.silver .supply-fill').forEach(b=>{
+      b.style.width=Math.min(100,(Number(sMinted)/5000)*100)+'%';
+    });
+  }catch(e){}
+}
+
 // ── INIT ──
 document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open');}));
 const obs=new IntersectionObserver(e=>e.forEach(x=>{if(x.isIntersecting){x.target.classList.add('in');obs.unobserve(x.target);}}),{threshold:0.08});
 document.querySelectorAll('.fade').forEach(el=>obs.observe(el));
 const sObs=new IntersectionObserver(e=>e.forEach(x=>{if(x.isIntersecting)x.target.querySelectorAll('.supply-fill[data-target]').forEach(b=>{setTimeout(()=>b.style.width=b.dataset.target,300)});}),{threshold:0.2});
 document.querySelectorAll('.pass-card').forEach(c=>sObs.observe(c));
+loadPassSupply();
 let pwaPrompt=null;
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();pwaPrompt=e;const btn=document.getElementById('pwaInstallBtn');if(btn)btn.style.display='block';});
 async function installPWA(){if(!pwaPrompt)return;pwaPrompt.prompt();const result=await pwaPrompt.userChoice;if(result.outcome==='accepted')document.getElementById('pwaInstallBtn').style.display='none';pwaPrompt=null;}
