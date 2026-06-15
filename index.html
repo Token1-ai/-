@@ -715,7 +715,10 @@ textarea.form-inp{resize:vertical;min-height:80px;}
 
     <div class="feed-area">
       <div id="view-feed">
-        <div class="feed-hdr">Home</div>
+        <div class="feed-hdr" style="display:flex;align-items:center;justify-content:space-between;">
+          <span>Home</span>
+          <button id="newPostsBtn" onclick="loadPosts()" style="display:none;background:var(--gold);color:#08090C;border-radius:20px;padding:4px 14px;font-size:12px;font-weight:700;border:none;cursor:pointer;">↻ New posts</button>
+        </div>
         <div class="feed-tabs">
           <button class="feed-tab active" onclick="switchFeedTab('all',this)">All Posts</button>
           <button class="feed-tab" onclick="switchFeedTab('following',this)">Following</button>
@@ -1640,12 +1643,24 @@ const PINATA_JWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySW5mb3JtYXRpb24
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let provider, signer, userAddr, currentUser, mintPrice, mintType;
 
+// ── CACHE ──
+const _userCache={};
+const _postLikeCache={};
+async function getCachedUser(wallet){
+  if(!wallet)return null;
+  if(_userCache[wallet]&&Date.now()-_userCache[wallet].t<60000) return _userCache[wallet].data;
+  const {data}=await sb.from('users').select('*').eq('wallet',wallet).single();
+  if(data) _userCache[wallet]={data,t:Date.now()};
+  return data;
+}
+
 // ── NAVIGATION ──
 function openApp(){
   document.getElementById('page-landing').classList.remove('active');
   document.getElementById('page-app').classList.add('active');
   window.scrollTo(0,0);
   loadPosts();
+  subscribeToNewPosts();
   if(userAddr) loadGateBal();
 }
 function goLanding(){
@@ -1732,11 +1747,21 @@ function updateCompAv(){
   const el=document.getElementById('compAv');
   el.innerHTML=currentUser.avatar_url?`<img src="${currentUser.avatar_url}" onerror="this.parentElement.textContent='🧑'"/>`:(currentUser.username?currentUser.username[0].toUpperCase():'🧑');
 }
-async function loadGateBal(){
+let _gateBalCache=null,_gateBalTime=0;
+async function loadGateBal(force=false){
+  if(!userAddr)return;
+  const now=Date.now();
+  // Cache for 30 seconds
+  if(!force&&_gateBalCache&&now-_gateBalTime<30000){
+    document.getElementById('gateBal').textContent=_gateBalCache;
+    return;
+  }
   try{
     const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');
     const bal=await new ethers.Contract(GATE_TOKEN,GATE_ABI,p).balanceOf(userAddr);
-    document.getElementById('gateBal').textContent=parseFloat(ethers.formatEther(bal)).toFixed(2);
+    _gateBalCache=parseFloat(ethers.formatEther(bal)).toFixed(2);
+    _gateBalTime=now;
+    document.getElementById('gateBal').textContent=_gateBalCache;
   }catch(e){}
 }
 
@@ -1762,7 +1787,7 @@ function showTab(tab){
   document.getElementById('tab-'+tab)?.classList.add('active');
   document.querySelectorAll('.mob-btn').forEach((b,i)=>b.classList.toggle('active',(tab==='feed'&&i===0)||(tab==='profile'&&i===1)));
   if(tab==='profile') loadProfile();
-  if(tab==='staking'){ loadStakingInfo(); clearInterval(stakingTimer); stakingTimer=setInterval(loadStakingInfo,5000); }
+  if(tab==='staking'){ loadStakingInfo(); clearInterval(stakingTimer); stakingTimer=setInterval(loadStakingInfo,10000); }
   else clearInterval(stakingTimer);
   if(tab==='messages'){ loadConversations(); }
   else { clearInterval(dmTimer); }
@@ -1876,16 +1901,51 @@ async function createPost(){
   }catch(e){showToast('Failed to post','err');}
   btn.disabled=false; btn.textContent='Post';
 }
+let postsRealtimeChannel=null;
+function subscribeToNewPosts(){
+  if(postsRealtimeChannel) return;
+  postsRealtimeChannel=sb.channel('posts-feed')
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'posts'},function(){
+      // Show "new posts" button instead of auto-reloading
+      const btn=document.getElementById('newPostsBtn');
+      if(btn) btn.style.display='block';
+    })
+    .subscribe();
+}
+
 async function loadPosts(){
   const list=document.getElementById('postsList');
   list.innerHTML='<div class="app-loader">Loading...</div>';
+  const btn=document.getElementById('newPostsBtn');
+  if(btn) btn.style.display='none';
   try{
-    const {data:posts,error}=await sb.from('posts').select('*, users!posts_author_wallet_fkey(username,avatar_url,pass_type)').order('created_at',{ascending:false}).limit(50);
-    if(error) throw error;
+    // Load posts + likes in parallel
+    const postsPromise=sb.from('posts')
+      .select('*, users!posts_author_wallet_fkey(username,avatar_url,pass_type)')
+      .order('created_at',{ascending:false})
+      .limit(15);
+    const [postsRes]=await Promise.all([postsPromise]);
+    const posts=postsRes.data;
+    if(postsRes.error) throw postsRes.error;
     if(!posts||posts.length===0){list.innerHTML='<div class="app-empty"><div class="app-empty-ico">✍️</div>No posts yet. Be the first!</div>';return;}
+    // Load likes only if logged in
     let ls=new Set();
-    if(userAddr){const {data:lk}=await sb.from('likes').select('post_id').eq('liker_wallet',userAddr).in('post_id',posts.map(p=>p.id));if(lk)lk.forEach(l=>ls.add(l.post_id));}
+    if(userAddr){
+      const {data:lk}=await sb.from('likes').select('post_id').eq('liker_wallet',userAddr).in('post_id',posts.map(p=>p.id));
+      if(lk)lk.forEach(l=>ls.add(l.post_id));
+    }
     list.innerHTML=posts.map(p=>renderPost(p,ls.has(p.id))).join('');
+    // Load more button
+    if(posts.length===15){
+      const more=document.createElement('div');
+      more.style.cssText='padding:16px;text-align:center;';
+      const btn=document.createElement('button');
+      btn.textContent='Load more';
+      btn.style.cssText='background:var(--bg3);border:1px solid var(--border);color:var(--muted);border-radius:20px;padding:8px 24px;font-size:13px;cursor:pointer;';
+      btn.onclick=function(){loadMorePosts(posts[posts.length-1].created_at);};
+      more.appendChild(btn);
+      list.appendChild(more);
+    }
   }catch(e){list.innerHTML='<div class="app-empty">Failed to load posts</div>';}
 }
 function renderImages(urls){
@@ -1905,6 +1965,48 @@ function renderPost(post,liked){
           <button class="act-btn" onclick="cpText(location.href+'?p=${post.id}');showToast('Link copied!','ok')"><span>🔗</span></button>
           ${post.author_wallet!==userAddr?`<button class="act-btn" onclick="openChallenge('${post.author_wallet}','${esc((post.users?.username||sAddr(post.author_wallet)))}')" title="Challenge to Battleship" style="font-size:11px;"><span>⚔️</span></button>`:''}</div></div></div></div>`;
 }
+async function loadMorePosts(before){
+  const list=document.getElementById('postsList');
+  const moreBtn=list.querySelector('button');
+  if(moreBtn) moreBtn.textContent='Loading...';
+  try{
+    const {data:posts}=await sb.from('posts')
+      .select('*, users!posts_author_wallet_fkey(username,avatar_url,pass_type)')
+      .order('created_at',{ascending:false})
+      .lt('created_at',before)
+      .limit(15);
+    if(!posts||posts.length===0){
+      const moreDiv=list.querySelector('div:last-child');
+      if(moreDiv)moreDiv.remove();
+      return;
+    }
+    let ls=new Set();
+    if(userAddr){
+      const {data:lk}=await sb.from('likes').select('post_id').eq('liker_wallet',userAddr).in('post_id',posts.map(p=>p.id));
+      if(lk)lk.forEach(l=>ls.add(l.post_id));
+    }
+    // Remove load more button
+    const moreDiv=list.querySelector('div:last-child');
+    if(moreDiv)moreDiv.remove();
+    // Append posts
+    const frag=document.createDocumentFragment();
+    const tmp=document.createElement('div');
+    tmp.innerHTML=posts.map(p=>renderPost(p,ls.has(p.id))).join('');
+    while(tmp.firstChild)frag.appendChild(tmp.firstChild);
+    list.appendChild(frag);
+    // New load more button
+    if(posts.length===15){
+      const more=document.createElement('div');
+      more.style.cssText='padding:16px;text-align:center;';
+      const btn=document.createElement('button');
+      btn.textContent='Load more';
+      btn.style.cssText='background:var(--bg3);border:1px solid var(--border);color:var(--muted);border-radius:20px;padding:8px 24px;font-size:13px;cursor:pointer;';
+      btn.onclick=function(){loadMorePosts(posts[posts.length-1].created_at);};
+      more.appendChild(btn);list.appendChild(more);
+    }
+  }catch(e){}
+}
+
 async function likePost(postId,authorWallet,btn){
   if(!userAddr){showToast('Connect wallet first','err');return;}
   if(userAddr===authorWallet.toLowerCase()){showToast("Can't like your own post",'err');return;}
@@ -1936,7 +2038,7 @@ async function likePost(postId,authorWallet,btn){
     btn.classList.add('liked'); btn.querySelector('span').textContent='❤️';
     document.getElementById('cnt-'+postId).textContent=c;
     showToast('❤️ Liked! GATE reward sent to author','ok');
-    loadGateBal();
+    loadGateBal(true);
   }catch(e){showToast((e.reason||e.message||'Failed').slice(0,50),'err');}
   btn.disabled=false;
 }
@@ -1949,13 +2051,16 @@ async function loadProfile(wallet){
   el.innerHTML='<div class="app-loader">Loading...</div>';
   const {data:u}=await sb.from('users').select('*').eq('wallet',target).single();
   if(!u){el.innerHTML='<div class="app-empty">User not found</div>';return;}
-  const {count:pc}=await sb.from('posts').select('*',{count:'exact',head:true}).eq('author_wallet',target);
-  const {count:fc}=await sb.from('follows').select('*',{count:'exact',head:true}).eq('following_wallet',target);
-  const {count:fic}=await sb.from('follows').select('*',{count:'exact',head:true}).eq('follower_wallet',target);
+  const [pcRes,fcRes,ficRes]=await Promise.all([
+    sb.from('posts').select('*',{count:'exact',head:true}).eq('author_wallet',target),
+    sb.from('follows').select('*',{count:'exact',head:true}).eq('following_wallet',target),
+    sb.from('follows').select('*',{count:'exact',head:true}).eq('follower_wallet',target)
+  ]);
+  const pc=pcRes.count,fc=fcRes.count,fic=ficRes.count;
   const isOwn=userAddr&&userAddr===target;
   let isF=false;
   if(userAddr&&!isOwn){const {data:f}=await sb.from('follows').select('id').eq('follower_wallet',userAddr).eq('following_wallet',target).single();isF=!!f;}
-  const av=u.avatar_url?`<img src="${u.avatar_url}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>`:'🧑';
+  const av=u.avatar_url?`<img src="${u.avatar_url}" loading="lazy" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>`:'🧑';
   const coverStyle=u.cover_url?`background:url('${u.cover_url}') center/cover no-repeat`:'background:linear-gradient(135deg,rgba(245,200,66,.15),rgba(38,217,138,.08))';
   const badgeStyle=u.pass_type==='gold'?'background:rgba(245,200,66,0.15);color:var(--gold);border:1px solid var(--border-g);':u.pass_type==='silver'?'background:rgba(168,189,208,0.15);color:var(--silver);border:1px solid var(--border-s);':'background:var(--bg3);color:var(--muted);border:1px solid var(--border);';
   const badgeTxt=u.pass_type==='gold'?'🥇 Gold Pass':u.pass_type==='silver'?'🥈 Silver Pass':'👤 Free';
@@ -1986,7 +2091,7 @@ async function loadProfile(wallet){
           <button class="follow-btn${isF?' following':''}" onclick="toggleFollow('${target}',this)">${isF?'Following':'Follow'}</button>
           <button id="bell-${target}" onclick="toggleBell('${target}',this)" style="background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:7px 12px;font-size:14px;cursor:pointer;color:var(--muted);transition:all .2s;">🔔</button>
           <button onclick="openDMWith('${target}')" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:20px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;">💬 Message</button>
-          <button onclick="openChallenge('${target}','${esc(u.username||sAddr(target))}')" style="background:linear-gradient(135deg,rgba(226,75,74,0.15),rgba(192,57,43,0.08));border:1px solid rgba(226,75,74,0.3);color:#E24B4A;border-radius:20px;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer;">⚔️ Challenge</button>
+
         </div>`
       }
     </div>
@@ -2744,17 +2849,14 @@ async function bsJoinGame(gameDbId,betAmt,betToken){
     bsJoinPvP(gameDbId);
   }catch(e){
     const msg=(e.reason||e.message||'Failed');
-    if(msg.includes('-32005')){
-      showToast('Network busy, try again in 2s...','err');
-      setTimeout(function(){bsJoinGame(gameDbId,betAmt,betToken);},2000);
-    } else {
-      showToast(msg.slice(0,60),'err');
-    }
+    showToast(msg.slice(0,60),'err');
   }
 }
 
 
 // ── START PVP ──
+let bsRealtimeChannel = null;
+
 function bsJoinPvP(gameDbId){
   currentBsGame=gameDbId;
   bsPhase='placing';
@@ -2768,8 +2870,32 @@ function bsJoinPvP(gameDbId){
   bsSetStatus('Place your ships on YOUR board (top), then click ✓ Ready');
   addBattleLog('⚓ PvP game! Place ships on TOP board.');
   bsInitBoard();
+
+  // Use Supabase Realtime instead of polling
   clearInterval(bsTimer);
-  bsTimer=setInterval(bsPollGame,3000);
+  if(bsRealtimeChannel) sb.removeChannel(bsRealtimeChannel);
+
+  bsRealtimeChannel = sb.channel('game-'+gameDbId)
+    .on('postgres_changes', {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'battleship_games',
+      filter: 'id=eq.'+gameDbId
+    }, function(payload){
+      bsHandleGameUpdate(payload.new);
+    })
+    .subscribe(function(status){
+      if(status==='SUBSCRIBED'){
+        addBattleLog('🔴 Live connection established');
+      } else if(status==='CHANNEL_ERROR'){
+        // Fallback to polling if realtime fails
+        addBattleLog('⚠️ Realtime unavailable, using polling...');
+        bsTimer=setInterval(bsPollGame,3000);
+      }
+    });
+
+  // Also do one initial fetch
+  bsPollGame();
 }
 
 // ── START AI ──
@@ -2819,6 +2945,7 @@ function bsInitBoard(){
 
 function leaveBattleGame(){
   clearInterval(bsTimer);
+  if(bsRealtimeChannel){sb.removeChannel(bsRealtimeChannel);bsRealtimeChannel=null;}
   currentBsGame=null;bsPhase='lobby';
   const lobby=document.getElementById('battleLobby');
   const game=document.getElementById('battleGame');
@@ -3047,6 +3174,37 @@ function bsAITurn(){
   var allSunk=bsMyShips.every(function(s){return bsAIFired.includes(s);});
   if(allSunk){bsPhase='over';bsSetStatus('💀 AI wins!');addBattleLog('💀 AI destroyed your fleet!');}
   else bsSetStatus('⚔️ YOUR TURN — click the BOTTOM board!');
+}
+
+function bsHandleGameUpdate(game){
+  if(!game||!currentBsGame||currentBsGame==='AI')return;
+  var isP1=game.player1_wallet===userAddr;
+  // Update enemy shots
+  var enemyShotsData=JSON.parse(isP1?(game.player2_shots||'[]'):(game.player1_shots||'[]'));
+  if(enemyShotsData.length!==bsEnemyShots.length){
+    bsEnemyShots=enemyShotsData;
+    bsRenderBoards();
+    var last=enemyShotsData[enemyShotsData.length-1];
+    if(last)addBattleLog(last.hit?('💥 Enemy hit '+bsCoord(last.idx)+'!'):('💧 Enemy missed '+bsCoord(last.idx)));
+  }
+  var myShotsData=JSON.parse(isP1?(game.player1_shots||'[]'):(game.player2_shots||'[]'));
+  if(myShotsData.length!==bsMyShots.length){bsMyShots=myShotsData;bsRenderBoards();}
+  if(game.status==='finished'){
+    clearInterval(bsTimer);
+    if(bsRealtimeChannel){sb.removeChannel(bsRealtimeChannel);bsRealtimeChannel=null;}
+    bsPhase='over';
+    bsSetStatus(game.winner_wallet===userAddr?'🎉 YOU WIN!':'💀 You lost!');
+    return;
+  }
+  var bothReady=game.player1_board&&game.player2_board;
+  if(bothReady&&bsPhase==='placing'){bsPhase='battle';bsRenderBoards();}
+  if(bsPhase==='battle'){
+    var myTurn=game.current_turn===userAddr;
+    bsSetStatus(myTurn?'⚔️ YOUR TURN — click the BOTTOM board!':'⏳ Opponent turn...');
+  } else if(bsPhase==='placing'){
+    var myBoard=isP1?game.player1_board:game.player2_board;
+    if(myBoard)bsSetStatus('⏳ Waiting for opponent to place ships...');
+  }
 }
 
 async function bsPollGame(){
@@ -3364,7 +3522,9 @@ async function loadNotifications(){
     if(!notifs||notifs.length===0){el.innerHTML='<div class="app-empty"><div class="app-empty-ico">🔔</div>No notifications yet</div>';return;}
     const wallets=[...new Set(notifs.map(n=>n.from_wallet))];
     const users={};
-    await Promise.all(wallets.map(async w=>{const {data:u}=await sb.from('users').select('username,avatar_url').eq('wallet',w).single();users[w]=u;}));
+    // Batch fetch all users at once instead of one by one
+    const {data:userList}=await sb.from('users').select('wallet,username,avatar_url').in('wallet',wallets);
+    if(userList)userList.forEach(u=>{users[u.wallet]=u;_userCache[u.wallet]={data:u,t:Date.now()};});
     el.innerHTML=notifs.map(n=>{
       const u=users[n.from_wallet]||{};
       const name=u.username||sAddr(n.from_wallet);
@@ -3426,11 +3586,17 @@ async function loadConversations(){
     const {data:recv}=await sb.from('messages').select('from_wallet').eq('to_wallet',userAddr);
     const wallets=new Set([...(sent||[]).map(m=>m.to_wallet),...(recv||[]).map(m=>m.from_wallet)]);
     if(wallets.size===0){el.innerHTML='<div class="app-empty"><div class="app-empty-ico">💬</div>No conversations yet.</div>';return;}
-    const items=await Promise.all([...wallets].map(async w=>{
-      const {data:last}=await sb.from('messages').select('*').or('and(from_wallet.eq.'+userAddr+',to_wallet.eq.'+w+'),and(from_wallet.eq.'+w+',to_wallet.eq.'+userAddr+')').order('created_at',{ascending:false}).limit(1).single();
-      const {data:user}=await sb.from('users').select('username,avatar_url').eq('wallet',w).single();
-      const {count:unread}=await sb.from('messages').select('*',{count:'exact',head:true}).eq('from_wallet',w).eq('to_wallet',userAddr).eq('read',false);
-      return {wallet:w,last,user,unread:unread||0};
+    // Batch fetch all users + unread counts in parallel
+    const walletArr=[...wallets];
+    const {data:convUsers}=await sb.from('users').select('wallet,username,avatar_url').in('wallet',walletArr);
+    const convUserMap={};
+    if(convUsers)convUsers.forEach(u=>{convUserMap[u.wallet]=u;});
+    const items=await Promise.all(walletArr.map(async w=>{
+      const [lastRes,unreadRes]=await Promise.all([
+        sb.from('messages').select('*').or('and(from_wallet.eq.'+userAddr+',to_wallet.eq.'+w+'),and(from_wallet.eq.'+w+',to_wallet.eq.'+userAddr+')').order('created_at',{ascending:false}).limit(1).single(),
+        sb.from('messages').select('*',{count:'exact',head:true}).eq('from_wallet',w).eq('to_wallet',userAddr).eq('read',false)
+      ]);
+      return {wallet:w,last:lastRes.data,user:convUserMap[w],unread:unreadRes.count||0};
     }));
     items.sort((a,b)=>new Date(b.last?.created_at||0)-new Date(a.last?.created_at||0));
     el.innerHTML='';
@@ -3450,9 +3616,41 @@ async function loadConversations(){
     });
   }catch(e){el.innerHTML='<div class="app-empty">Failed</div>';}
 }
-async function openDM(wallet){if(!userAddr)return;currentDMWallet=wallet;document.getElementById('convList').style.display='none';document.getElementById('convView').style.display='flex';document.getElementById('dmBackBtn').style.display='block';const {data:user}=await sb.from('users').select('username').eq('wallet',wallet).single();document.getElementById('dmTitle').textContent='💬 '+(user?.username||sAddr(wallet));loadMessages();await sb.from('messages').update({read:true}).eq('from_wallet',wallet).eq('to_wallet',userAddr);clearInterval(dmTimer);dmTimer=setInterval(loadMessages,3000);}
+let dmRealtimeChannel=null;
+async function openDM(wallet){
+  if(!userAddr)return;
+  currentDMWallet=wallet;
+  document.getElementById('convList').style.display='none';
+  document.getElementById('convView').style.display='flex';
+  document.getElementById('dmBackBtn').style.display='block';
+  const {data:user}=await sb.from('users').select('username').eq('wallet',wallet).single();
+  document.getElementById('dmTitle').textContent='💬 '+(user?.username||sAddr(wallet));
+  loadMessages();
+  await sb.from('messages').update({read:true}).eq('from_wallet',wallet).eq('to_wallet',userAddr);
+  // Realtime for messages
+  clearInterval(dmTimer);
+  if(dmRealtimeChannel){sb.removeChannel(dmRealtimeChannel);dmRealtimeChannel=null;}
+  dmRealtimeChannel=sb.channel('dm-'+userAddr+'-'+wallet)
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},function(payload){
+      const m=payload.new;
+      if((m.from_wallet===wallet&&m.to_wallet===userAddr)||(m.from_wallet===userAddr&&m.to_wallet===wallet)){
+        loadMessages();
+        if(m.from_wallet===wallet) sb.from('messages').update({read:true}).eq('from_wallet',wallet).eq('to_wallet',userAddr);
+      }
+    })
+    .subscribe();
+}
 function openDMByAddr(){const addr=document.getElementById('newDmAddr').value.trim().toLowerCase();if(!addr||!addr.startsWith('0x')){showToast('Enter valid address','err');return;}openDM(addr);}
-function showConvList(){currentDMWallet=null;clearInterval(dmTimer);document.getElementById('convList').style.display='block';document.getElementById('convView').style.display='none';document.getElementById('dmBackBtn').style.display='none';document.getElementById('dmTitle').textContent='💬 Messages';loadConversations();}
+function showConvList(){
+  currentDMWallet=null;
+  clearInterval(dmTimer);
+  if(dmRealtimeChannel){sb.removeChannel(dmRealtimeChannel);dmRealtimeChannel=null;}
+  document.getElementById('convList').style.display='block';
+  document.getElementById('convView').style.display='none';
+  document.getElementById('dmBackBtn').style.display='none';
+  document.getElementById('dmTitle').textContent='💬 Messages';
+  loadConversations();
+}
 async function loadMessages(){
   if(!currentDMWallet||!userAddr)return;
   const el=document.getElementById('msgList');
