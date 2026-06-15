@@ -3775,7 +3775,18 @@ async function loadRewardsPool(){try{const p=new ethers.JsonRpcProvider('https:/
 
 // ── HELPERS ──
 let toastT;
-function showToast(msg,type='ok'){const t=document.getElementById('toast');t.textContent=msg;t.className='show '+type;clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),3500);}
+function showToast(msg,type='ok'){
+  // Filter wallet-level errors that confuse users
+  if(!msg)return;
+  const skip=['Insufficient payment','execution reverted','ACTION_REJECTED','user rejected'];
+  if(type==='err'&&skip.some(s=>msg.includes(s))){
+    // Show friendlier message
+    if(msg.includes('ACTION_REJECTED')||msg.includes('user rejected')) msg='Transaction cancelled';
+    else if(msg.includes('Insufficient payment')) msg='Not enough balance';
+    else if(msg.includes('execution reverted')) msg='Transaction failed. Check balance.';
+  }
+  const t=document.getElementById('toast');t.textContent=msg;t.className='show '+type;clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),3500);
+}
 function cpText(t){navigator.clipboard.writeText(t);}
 function sAddr(a){return a?a.slice(0,6)+'...'+a.slice(-4):'';}
 function esc(s){return s?s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'):'';}
