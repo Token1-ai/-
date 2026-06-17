@@ -1516,7 +1516,7 @@ const GOLD_PASS  = '0x16239880aEe6919Ed0a411859D8D8e5A7F2ef801';
 const SILVER_PASS= '0x1CcA4e53E66EbDcD31f4d7ae4E2A791C49CF4a46';
 const GATE_TOKEN = '0xf383B2e7ad25D3f7f9cEcB68f4fe60049a3Ee8af';
 const BNB_ID     = '0x38';
-const LITVM      = {chainId:'0x1159',chainName:'LitVM LiteForge',nativeCurrency:{name:'zkLTC',symbol:'zkLTC',decimals:18},rpcUrls:['https://opengate-app-zeta.vercel.app/api/rpc'],blockExplorerUrls:['https://liteforge.explorer.caldera.xyz']};
+const LITVM      = {chainId:'0x1159',chainName:'LitVM LiteForge',nativeCurrency:{name:'zkLTC',symbol:'zkLTC',decimals:18},rpcUrls:['https://liteforge.rpc.caldera.xyz/http'],blockExplorerUrls:['https://liteforge.explorer.caldera.xyz']};
 const MINT_ABI   = ['function getMintPriceBNB() view returns(uint256)','function mint(uint256) payable'];
 const GATE_ABI   = ['function transfer(address,uint256) returns(bool)','function balanceOf(address) view returns(uint256)','function approve(address,uint256) returns(bool)','function allowance(address,address) view returns(uint256)'];
 const GATE_STAKING  = '0xDD2d80b7c31622D084905899b4d40b815cF01bF8';
@@ -1647,7 +1647,7 @@ let provider, signer, userAddr, currentUser, mintPrice, mintType;
 // Use MetaMask provider if connected (no rate limit), fallback to public RPC
 function getReadProvider(){
   if(provider) return provider; // MetaMask already connected - use it!
-  return new ethers.JsonRpcProvider('https://opengate-app-zeta.vercel.app/api/rpc');
+  return new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');
 }
 function getBNBProvider(){
   // BNB reads always use public RPC (not LitVM)
