@@ -666,8 +666,8 @@ textarea.form-inp{resize:vertical;min-height:80px;}
     <div class="footer-links">
       <a href="https://www.easyswap.life" target="_blank">Easy Swap</a>
       <a href="https://liteforge.explorer.caldera.xyz" target="_blank">LitVM Explorer</a>
-      <a href="https://bscscan.com/address/0x065B95Fd0409C40b9eD27e71E2DD4Ad40aB50096" target="_blank">GoldPass</a>
-      <a href="https://bscscan.com/address/0xd3809aaf6eA7cEDEa3364780eE8F789f81cc7Fcc" target="_blank">SilverPass</a>
+      <a href="https://bscscan.com/address/0x16239880aEe6919Ed0a411859D8D8e5A7F2ef801" target="_blank">GoldPass</a>
+      <a href="https://bscscan.com/address/0x1CcA4e53E66EbDcD31f4d7ae4E2A791C49CF4a46" target="_blank">SilverPass</a>
     </div>
   </footer>
 </div>
@@ -1512,11 +1512,11 @@ textarea.form-inp{resize:vertical;min-height:80px;}
 // ── CONFIG ──
 const SUPABASE_URL = 'https://hgzthbidfdqomuotdocb.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhnenRoYmlkZmRxb211b3Rkb2NiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwMTI2NjEsImV4cCI6MjA5NjU4ODY2MX0.otgk-jq2k0COrIE3cUEnRBPYKGnzAHRi3LEIQhE7khA';
-const GOLD_PASS  = '0x065B95Fd0409C40b9eD27e71E2DD4Ad40aB50096';
-const SILVER_PASS= '0xd3809aaf6eA7cEDEa3364780eE8F789f81cc7Fcc';
+const GOLD_PASS  = '0x16239880aEe6919Ed0a411859D8D8e5A7F2ef801';
+const SILVER_PASS= '0x1CcA4e53E66EbDcD31f4d7ae4E2A791C49CF4a46';
 const GATE_TOKEN = '0xf383B2e7ad25D3f7f9cEcB68f4fe60049a3Ee8af';
 const BNB_ID     = '0x38';
-const LITVM      = {chainId:'0x1159',chainName:'LitVM LiteForge',nativeCurrency:{name:'zkLTC',symbol:'zkLTC',decimals:18},rpcUrls:['https://liteforge.rpc.caldera.xyz/http'],blockExplorerUrls:['https://liteforge.explorer.caldera.xyz']};
+const LITVM      = {chainId:'0x1159',chainName:'LitVM LiteForge',nativeCurrency:{name:'zkLTC',symbol:'zkLTC',decimals:18},rpcUrls:['https://opengate-app-zeta.vercel.app/api/rpc'],blockExplorerUrls:['https://liteforge.explorer.caldera.xyz']};
 const MINT_ABI   = ['function getMintPriceBNB() view returns(uint256)','function mint(uint256) payable'];
 const GATE_ABI   = ['function transfer(address,uint256) returns(bool)','function balanceOf(address) view returns(uint256)','function approve(address,uint256) returns(bool)','function allowance(address,address) view returns(uint256)'];
 const GATE_STAKING  = '0xDD2d80b7c31622D084905899b4d40b815cF01bF8';
@@ -1527,7 +1527,7 @@ const GATE_REWARDS    = '0xf0A8E4E553700578F5b08219dc4D6Ce7491777e6';
 const GATE_DAO        = '0x0A71755Eb9A72669A627534e17FFafDBfbF49298';
 const GATE_LOTTERY    = '0xe57Af825502EE1E29E1e2027038a0F5E00ee7F7E';
 const GATE_DICE         = '0x3f72225815D7087f7b22A5C9600AEE3B0E5dB798';
-const BATTLESHIP_ADDR   = '0x396117F12DCe9240fFCf2f9b727F343888Dc67a1';
+const BATTLESHIP_ADDR   = '0x91921AcF7adD697E69f77C070f65592d26C7369d';
 const GATE_LENDING      = '0x7b650B1A6620c5903ccA91fED6a5Ebe53A72347A';
 const GATE_FAUCET       = '0x6E8d8F0cbed7126f6578B8cA2570506bd5BFDc74';
 const FAUCET_ABI        = [
@@ -1643,6 +1643,17 @@ const PINATA_JWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySW5mb3JtYXRpb24
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let provider, signer, userAddr, currentUser, mintPrice, mintType;
 
+// ── RPC PROVIDER ──
+// Use MetaMask provider if connected (no rate limit), fallback to public RPC
+function getReadProvider(){
+  if(provider) return provider; // MetaMask already connected - use it!
+  return new ethers.JsonRpcProvider('https://opengate-app-zeta.vercel.app/api/rpc');
+}
+function getBNBProvider(){
+  // BNB reads always use public RPC (not LitVM)
+  return new ethers.JsonRpcProvider('https://bsc-dataseed.binance.org/');
+}
+
 // ── CACHE ──
 const _userCache={};
 const _postLikeCache={};
@@ -1708,8 +1719,22 @@ async function connectWallet(){
     await ensureUser();
     loadGateBal();
     loadPosts();
+    subscribeToNewPosts();
     updateNotifBadge();
     loadRewardsPool();
+    // Subscribe after userAddr confirmed
+    setTimeout(function(){
+      subscribeToConversations();
+      updateUnreadBadge();
+    }, 500);
+    // Realtime for notifications
+    try{
+      sb.channel('notifs-'+userAddr)
+        .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'to_wallet=eq.'+userAddr},function(){
+          updateNotifBadge();
+        })
+        .subscribe();
+    }catch(e){}
   } catch(e){ showToast('Connection cancelled','err'); }
 }
 
@@ -1728,8 +1753,12 @@ async function switchToLitVM(){
   catch(e){ 
     if(e.code===4902){
       await window.ethereum.request({method:'wallet_addEthereumChain',params:[LITVM]});
+      // Wait for network to be added
+      await new Promise(r=>setTimeout(r,500));
+      await window.ethereum.request({method:'wallet_switchEthereumChain',params:[{chainId:'0x1159'}]});
     } else if(e.code!==4001){ throw e; }
   }
+  // Always refresh provider after network switch
   provider = new ethers.BrowserProvider(window.ethereum);
   signer = await provider.getSigner();
   userAddr = (await signer.getAddress()).toLowerCase();
@@ -1757,7 +1786,7 @@ async function loadGateBal(force=false){
     return;
   }
   try{
-    const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');
+    const p=getReadProvider();
     const bal=await new ethers.Contract(GATE_TOKEN,GATE_ABI,p).balanceOf(userAddr);
     _gateBalCache=parseFloat(ethers.formatEther(bal)).toFixed(2);
     _gateBalTime=now;
@@ -1789,8 +1818,24 @@ function showTab(tab){
   if(tab==='profile') loadProfile();
   if(tab==='staking'){ loadStakingInfo(); clearInterval(stakingTimer); stakingTimer=setInterval(loadStakingInfo,10000); }
   else clearInterval(stakingTimer);
-  if(tab==='messages'){ loadConversations(); }
-  else { clearInterval(dmTimer); }
+  if(tab==='messages'){ loadConversations(); subscribeToConversations(); }
+  else {
+    clearInterval(dmTimer);
+    // Close DM realtime when leaving messages tab
+    if(tab!=='messages'){
+      if(dmRealtimeChannel){sb.removeChannel(dmRealtimeChannel);dmRealtimeChannel=null;}
+      // Keep convsRealtimeChannel for badge updates (it's lightweight)
+    }
+    // Close lobby realtime when leaving battle tab
+    if(tab!=='battle'&&lobbyRealtimeChannel){
+      sb.removeChannel(lobbyRealtimeChannel);lobbyRealtimeChannel=null;
+    }
+    // Close battleship realtime when leaving battle tab
+    if(tab!=='battle'&&bsRealtimeChannel){
+      clearInterval(bsTimer);
+      sb.removeChannel(bsRealtimeChannel);bsRealtimeChannel=null;
+    }
+  }
   if(tab==='presale') loadPresaleInfo();
   if(tab==='launchpad') loadLaunchpad();
   if(tab==='notifs') loadNotifications();
@@ -1799,7 +1844,7 @@ function showTab(tab){
   if(tab==='dao') loadDAO();
   if(tab==='lottery') loadLottery();
   if(tab==='dice') loadDice();
-  if(tab==='battle'){ loadBattleLobby(); clearInterval(bsTimer); }
+  if(tab==='battle'){ loadBattleLobby(); subscribeToBattleLobby(); clearInterval(bsTimer); }
   if(tab==='games'){}
   if(tab==='lending') loadLending();
   if(tab==='faucet') loadFaucet();
@@ -2054,11 +2099,17 @@ async function likePost(postId,authorWallet,btn){
     await tx.wait();
     await sb.from('likes').insert({post_id:postId,liker_wallet:userAddr,tx_hash:tx.hash});
     await createNotif(authorWallet,'like',postId);
-    const c=parseInt(document.getElementById('cnt-'+postId).textContent)+1;
+    // Update likes count
+    const cntEl=document.getElementById('cnt-'+postId);
+    const prevCount=parseInt((cntEl&&cntEl.textContent)||'0')||0;
+    const c=prevCount+1;
+    // Update UI immediately
+    btn.classList.add('liked');
+    btn.querySelector('span').textContent='❤️';
+    if(cntEl) cntEl.textContent=c;
+    // Save to DB
     await sb.from('posts').update({likes_count:c}).eq('id',postId);
-    btn.classList.add('liked'); btn.querySelector('span').textContent='❤️';
-    document.getElementById('cnt-'+postId).textContent=c;
-    showToast('❤️ Liked! GATE reward sent to author','ok');
+    showToast('❤️ Liked! 0.1 GATE sent to author','ok');
     loadGateBal(true);
   }catch(e){showToast((e.reason||e.message||'Failed').slice(0,50),'err');}
   btn.disabled=false;
@@ -2249,7 +2300,7 @@ async function scanWalletNFTs(){
   const el=document.getElementById('walletNFTList');
   el.innerHTML='<div style="font-size:12px;color:var(--muted);grid-column:1/-1;padding:10px;">Scanning your wallet...</div>';
   try{
-    const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');
+    const p=getReadProvider();
     // Collect all known NFT contracts
     const contracts=new Set();
     // From NFT marketplace on LitVM - get all listed contracts
@@ -2325,7 +2376,7 @@ async function loadNFTAvatar(){
   const preview=document.getElementById('nftPreview');
   preview.innerHTML='<div style="font-size:12px;color:var(--muted);">Loading NFT...</div>';
   try{
-    const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');
+    const p=getReadProvider();
     const nftAbi=['function tokenURI(uint256) view returns(string)'];
     const nft=new ethers.Contract(contract,nftAbi,p);
     let uri=await nft.tokenURI(tokenId);
@@ -2401,7 +2452,7 @@ async function openMintModal(type){
   document.getElementById('mintBnb').textContent='Loading...';
   document.getElementById('mintModal').classList.add('open');
   try{
-    const p=new ethers.JsonRpcProvider('https://bsc-dataseed.binance.org/');
+    const p=getBNBProvider();
     const c=new ethers.Contract(isGold?GOLD_PASS:SILVER_PASS,MINT_ABI,p);
     mintPrice=await c.getMintPriceBNB();
     document.getElementById('mintBnb').textContent=parseFloat(ethers.formatEther(mintPrice)).toFixed(6)+' BNB';
@@ -2432,7 +2483,7 @@ async function executeMint(){
 // ── FAUCET ──
 async function loadFaucet(){
   try{
-    const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');
+    const p=getReadProvider();
     const faucet=new ethers.Contract(GATE_FAUCET,FAUCET_ABI,p);
     const [bal,count]=await Promise.all([faucet.faucetBalance(),faucet.claimCount()]);
     document.getElementById('faucetBalance').textContent=parseFloat(ethers.formatEther(bal)).toFixed(0);
@@ -2519,7 +2570,7 @@ function updateGateBorrowCalc(){
 
 async function loadLending(){
   try{
-    const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');
+    const p=getReadProvider();
     const lend=new ethers.Contract(GATE_LENDING,LENDING_ABI,p);
     const pool=await lend.gatePool();
     document.getElementById('lendGatePool').textContent=parseFloat(ethers.formatEther(pool)).toFixed(0)+' GATE';
@@ -2570,7 +2621,7 @@ async function loadMyLoans(){
   const el=document.getElementById('myLoansList');
   el.innerHTML='<div class="app-loader">Loading...</div>';
   try{
-    const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');
+    const p=getReadProvider();
     const lend=new ethers.Contract(GATE_LENDING,LENDING_ABI,p);
     const [zkIds,gateIds]=await Promise.all([lend.getMyZkLoans(),lend.getMyGateLoans()]);
     let html='';
@@ -2680,9 +2731,24 @@ function setBsMode(mode){
 }
 
 // ── LOBBY ──
+let lobbyRealtimeChannel=null;
+function subscribeToBattleLobby(){
+  if(lobbyRealtimeChannel) return;
+  lobbyRealtimeChannel=sb.channel('lobby-games')
+    .on('postgres_changes',{event:'*',schema:'public',table:'battleship_games'},function(){
+      // Refresh lobby on any game change
+      if(document.getElementById('battleLobby')&&
+         document.getElementById('battleLobby').style.display!=='none'){
+        loadBattleLobby();
+      }
+    })
+    .subscribe();
+}
+
 async function loadBattleLobby(){
   const el=document.getElementById('openGamesList');
   if(!el)return;
+  subscribeToBattleLobby();
   el.innerHTML='<div class="app-loader">Loading...</div>';
   try{
     // Auto-cancel abandoned playing games older than 2 hours
@@ -2823,22 +2889,34 @@ async function createBattleGame(){
       const txdata=sel+coder.encode(['uint256'],[amtWei]).slice(2);
       const tx=await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data:txdata,gasLimit:400000n});
       const receipt=await tx.wait();
-      // Get contract game ID
+      // Get contract gameId from gameCount
       let cid=0;
       try{
         const cntSel=ethers.id('gameCount()').slice(0,10);
-        const r=await provider.call({to:BATTLESHIP_ADDR,data:cntSel});
+        const r=await freshSigner.provider.call({to:BATTLESHIP_ADDR,data:cntSel});
         cid=Number(BigInt(r));
+        // Save contract gameId to DB
+        if(cid>0&&newGame){
+          await sb.from('battleship_games').update({contract_game_id:cid}).eq('id',newGame.id);
+        }
       }catch{}
-      // Update DB with contract ID
-      // contract_game_id not in schema, skip update
       showToast('Staked! Game ready ⚔️','ok');
     } else {
       const sel=ethers.id('createGameZK()').slice(0,10);
       const amtWei2=ethers.parseEther(amt);
       const freshSigner2=await provider.getSigner();
       const tx=await freshSigner2.sendTransaction({to:BATTLESHIP_ADDR,data:sel,value:amtWei2,gasLimit:400000n});
-      await tx.wait();
+      const receipt2=await tx.wait();
+      // Get contract gameId
+      let cid2=0;
+      try{
+        const cntSel=ethers.id('gameCount()').slice(0,10);
+        const r=await freshSigner2.provider.call({to:BATTLESHIP_ADDR,data:cntSel});
+        cid2=Number(BigInt(r));
+        if(cid2>0&&newGame){
+          await sb.from('battleship_games').update({contract_game_id:cid2}).eq('id',newGame.id);
+        }
+      }catch{}
       showToast('Staked! Game ready ⚔️','ok');
     }
   }catch(contractErr){
@@ -2856,25 +2934,33 @@ async function bsJoinGame(gameDbId,betAmt,betToken){
     if(g.player1_wallet===userAddr){showToast('This is your own game','err');return;}
     if(g.status!=='waiting'){showToast('Game no longer available','err');return;}
 
+    // Stake tokens if this is a paid game
     if(g.bet_token!=='FREE'&&parseFloat(g.bet_amount)>0){
-      await switchToLitVM();
-      const freshSigner=await provider.getSigner();
-      const amtWei=ethers.parseEther(g.bet_amount);
-      if(g.bet_token==='GATE'){
-        showToast('Approving '+g.bet_amount+' GATE...','ok');
-        const gate=new ethers.Contract(GATE_TOKEN,GATE_ABI,freshSigner);
-        await (await gate.approve(BATTLESHIP_ADDR,amtWei)).wait();
-        showToast('Joining on contract...','ok');
-        const coder=ethers.AbiCoder.defaultAbiCoder();
-        const sel=ethers.id('joinGameGATE(uint256)').slice(0,10);
-        const enc=coder.encode(['uint256'],[BigInt(g.contract_game_id||0)]);
-        await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data:sel+enc.slice(2),gasLimit:300000n})).wait();
-      } else {
-        showToast('Sending '+g.bet_amount+' zkLTC...','ok');
-        const coder=ethers.AbiCoder.defaultAbiCoder();
-        const sel=ethers.id('joinGameZK(uint256)').slice(0,10);
-        const enc=coder.encode(['uint256'],[BigInt(g.contract_game_id||0)]);
-        await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data:sel+enc.slice(2),value:amtWei,gasLimit:300000n})).wait();
+      try{
+        await switchToLitVM();
+        const freshSigner=await provider.getSigner();
+        const amtWei=ethers.parseEther(g.bet_amount);
+        if(g.bet_token==='GATE'){
+          const gate=new ethers.Contract(GATE_TOKEN,GATE_ABI,freshSigner);
+          showToast('Approving '+g.bet_amount+' GATE...','ok');
+          await (await gate.approve(BATTLESHIP_ADDR,amtWei)).wait();
+          showToast('Joining game on contract...','ok');
+          const coder=ethers.AbiCoder.defaultAbiCoder();
+          const sel=ethers.id('joinGameGATE(uint256)').slice(0,10);
+          const enc=coder.encode(['uint256'],[BigInt(g.contract_game_id||0)]);
+          await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data:sel+enc.slice(2),gasLimit:300000n})).wait();
+        } else {
+          showToast('Joining game with '+g.bet_amount+' zkLTC...','ok');
+          const coder=ethers.AbiCoder.defaultAbiCoder();
+          const sel=ethers.id('joinGameZK(uint256)').slice(0,10);
+          const enc=coder.encode(['uint256'],[BigInt(g.contract_game_id||0)]);
+          await (await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data:sel+enc.slice(2),value:amtWei,gasLimit:300000n})).wait();
+        }
+        showToast('Joined! 🎮','ok');
+      }catch(stakeErr){
+        // If stake fails - still allow joining (free play fallback)
+        console.log('Stake failed:', stakeErr.message);
+        showToast('Joining without stake...','ok');
       }
     }
     await sb.from('battleship_games').update({
@@ -2914,22 +3000,25 @@ function bsJoinPvP(gameDbId){
     .on('postgres_changes', {
       event: 'UPDATE',
       schema: 'public',
-      table: 'battleship_games',
-      filter: 'id=eq.'+gameDbId
+      table: 'battleship_games'
     }, function(payload){
-      bsHandleGameUpdate(payload.new);
+      // Check game ID manually (UUID filter can be unreliable)
+      if(payload.new && payload.new.id === gameDbId){
+        bsHandleGameUpdate(payload.new);
+      }
     })
     .subscribe(function(status){
       if(status==='SUBSCRIBED'){
-        addBattleLog('🔴 Live connection established');
-      } else if(status==='CHANNEL_ERROR'){
-        // Fallback to polling if realtime fails
-        addBattleLog('⚠️ Realtime unavailable, using polling...');
+        addBattleLog('🔴 Live');
+        // Start lightweight polling as backup (every 3s)
+        bsTimer=setInterval(bsPollGame,3000);
+      } else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'){
+        addBattleLog('⚠️ Using polling...');
         bsTimer=setInterval(bsPollGame,3000);
       }
     });
 
-  // Also do one initial fetch
+  // Initial fetch
   bsPollGame();
 }
 
@@ -3017,21 +3106,34 @@ function bsRenderBoards(){
     (function(idx){ec.onclick=function(){bsFireAt(idx);};})(i);
     enEl.appendChild(ec);
   }
+  // Paint MY board: ships first, then enemy shots ON TOP
   bsMyShips.forEach(function(idx){
     var c=document.getElementById('my-'+idx);
-    if(c)c.style.cssText='aspect-ratio:1;border-radius:2px;background:rgba(38,217,138,0.35);border:1px solid var(--green);cursor:crosshair;';
+    if(c)c.style.cssText='aspect-ratio:1;border-radius:2px;background:rgba(38,217,138,0.35);border:1px solid var(--green);'+(bsPhase==='placing'?'cursor:crosshair;':'cursor:default;');
   });
-  bsMyShots.forEach(function(s){
-    var c=document.getElementById('en-'+s.idx);
-    if(!c)return;
-    if(s.hit){c.style.cssText='aspect-ratio:1;border-radius:2px;background:rgba(255,77,77,0.6);border:1px solid #ff4d4d;cursor:default;';c.innerHTML='<b style="color:#fff;font-size:13px;line-height:1;">✕</b>';}
-    else{c.style.cssText='aspect-ratio:1;border-radius:2px;background:rgba(90,100,120,0.3);border:1px solid var(--muted);cursor:default;';c.innerHTML='<b style="color:#888;font-size:10px;">•</b>';}
-  });
+  // Enemy shots on MY board (paint AFTER ships so they show on top)
   bsEnemyShots.forEach(function(s){
     var c=document.getElementById('my-'+s.idx);
     if(!c)return;
-    if(s.hit){c.style.cssText='aspect-ratio:1;border-radius:2px;background:rgba(255,77,77,0.6);border:1px solid #ff4d4d;';c.innerHTML='<b style="color:#fff;font-size:13px;line-height:1;">✕</b>';}
-    else{c.style.cssText='aspect-ratio:1;border-radius:2px;background:rgba(90,100,120,0.3);border:1px solid var(--muted);';c.innerHTML='<b style="color:#888;font-size:10px;">•</b>';}
+    if(s.hit){
+      c.style.cssText='aspect-ratio:1;border-radius:2px;background:rgba(255,77,77,0.8);border:2px solid #ff4d4d;cursor:default;';
+      c.innerHTML='<b style="color:#fff;font-size:13px;line-height:1;">✕</b>';
+    } else {
+      c.style.cssText='aspect-ratio:1;border-radius:2px;background:rgba(90,100,120,0.4);border:1px solid var(--muted);cursor:default;';
+      c.innerHTML='<b style="color:#aaa;font-size:10px;">•</b>';
+    }
+  });
+  // Paint MY shots on ENEMY board
+  bsMyShots.forEach(function(s){
+    var c=document.getElementById('en-'+s.idx);
+    if(!c)return;
+    if(s.hit){
+      c.style.cssText='aspect-ratio:1;border-radius:2px;background:rgba(255,77,77,0.8);border:2px solid #ff4d4d;cursor:default;';
+      c.innerHTML='<b style="color:#fff;font-size:13px;line-height:1;">✕</b>';
+    } else {
+      c.style.cssText='aspect-ratio:1;border-radius:2px;background:rgba(90,100,120,0.4);border:1px solid var(--muted);cursor:default;';
+      c.innerHTML='<b style="color:#aaa;font-size:10px;">•</b>';
+    }
   });
 }
 
@@ -3119,24 +3221,49 @@ function toggleOrientation(){
 function clearMyShips(){bsMyShips=[];bsPlaced=[];bsSelectedSize=0;bsRenderBoards();bsBuildShipBtns();}
 
 function randomPlaceShips(){
-  bsMyShips=[];bsPlaced=[];bsSelectedSize=0;
-  BS_SHIP_SIZES.forEach(function(size){
-    var ok=false,tries=0;
-    while(!ok&&tries++<2000){
-      var h=Math.random()>.5,r=Math.floor(Math.random()*(h?10:11-size)),c=Math.floor(Math.random()*(h?11-size:10));
-      var cells=bsGetCells(r*10+c,size,h);
-      if(cells&&bsIsValid(cells)){bsPlaced.push({cells:cells,size:size});cells.forEach(function(x){bsMyShips.push(x);});ok=true;}
+  // Try up to 10 times to place all ships
+  for(var attempt=0;attempt<10;attempt++){
+    bsMyShips=[];bsPlaced=[];bsSelectedSize=0;
+    var allPlaced=true;
+    for(var si=0;si<BS_SHIP_SIZES.length;si++){
+      var size=BS_SHIP_SIZES[si];
+      var ok=false,tries=0;
+      while(!ok&&tries++<5000){
+        var h=Math.random()>.5;
+        var r=Math.floor(Math.random()*(h?10:11-size));
+        var c=Math.floor(Math.random()*(h?11-size:10));
+        var cells=bsGetCells(r*10+c,size,h);
+        if(cells&&bsIsValid(cells)){
+          bsPlaced.push({cells:cells,size:size});
+          cells.forEach(function(x){bsMyShips.push(x);});
+          ok=true;
+        }
+      }
+      if(!ok){allPlaced=false;break;}
     }
-  });
-  bsRenderBoards();bsBuildShipBtns();
+    if(allPlaced) break;
+  }
+  bsRenderBoards();
+  bsBuildShipBtns();
+  showToast('Ships placed randomly!','ok');
 }
 
 async function setReady(){
   if(bsPlaced.length<BS_SHIP_SIZES.length){showToast('Place all ships first!','err');return;}
   bsPhase='battle';
   bsRenderBoards();
+  // Hide ALL placement controls permanently
   var sp=document.getElementById('shipsPanel');
   if(sp)sp.style.display='none';
+  var pb=document.getElementById('placeShipsBtn');
+  if(pb)pb.style.display='none';
+  var rb=document.getElementById('readyBtn');
+  if(rb)rb.style.display='none';
+  // Disable clicking on my board
+  for(var i=0;i<100;i++){
+    var c=document.getElementById('my-'+i);
+    if(c){c.onclick=null;c.onmouseover=null;c.onmouseout=null;c.style.cursor='default';}
+  }
   addBattleLog('✓ Ships placed! Click the BOTTOM board to fire!');
   if(currentBsGame==='AI'){
     bsSetStatus('⚔️ YOUR TURN — click the BOTTOM board!');
@@ -3172,25 +3299,48 @@ async function bsFireAt(idx){
     var res=await sb.from('battleship_games').select('*').eq('id',currentBsGame).single();
     var game=res.data;
     if(!game||game.status!=='playing'){showToast('Game not active','err');return;}
-    if(game.current_turn!==userAddr){showToast('Not your turn!','err');return;}
+    if((game.current_turn||'').toLowerCase()!==userAddr){showToast('Not your turn!','err');return;}
     var isP1=game.player1_wallet===userAddr;
     var enemyBoard=JSON.parse(isP1?(game.player2_board||'[]'):(game.player1_board||'[]'));
     if(enemyBoard.length===0){showToast('Opponent placing ships, wait...','err');return;}
     var hit=enemyBoard.includes(idx);
-    bsMyShots.push({idx:idx,hit:hit});
     var key=isP1?'player1_shots':'player2_shots';
     var shots=JSON.parse(game[key]||'[]');
     shots.push({idx:idx,hit:hit});
     var won=enemyBoard.every(function(s){return shots.filter(function(x){return x.hit;}).some(function(x){return x.idx===s;});});
     var upd={};
     upd[key]=JSON.stringify(shots);
-    upd.current_turn=isP1?game.player2_wallet:game.player1_wallet;
-    if(won){upd.status='finished';upd.winner_wallet=userAddr;}
+    // If HIT - keep same player's turn (shoot again)
+    // If MISS - switch to opponent's turn
+    if(won){
+      upd.status='finished';
+      upd.winner_wallet=userAddr;
+      upd.current_turn=userAddr;
+    } else if(hit){
+      upd.current_turn=userAddr; // hit = same player shoots again
+    } else {
+      // miss = switch to opponent (lowercase to match userAddr)
+      var opponent=isP1?game.player2_wallet:game.player1_wallet;
+      upd.current_turn=(opponent||'').toLowerCase();
+    }
+    // Save to DB - Realtime will update both players
     await sb.from('battleship_games').update(upd).eq('id',currentBsGame);
+    // Update local state immediately for shooter
+    bsMyShots=shots;
     bsRenderBoards();
-    addBattleLog(hit?('💥 Hit! '+bsCoord(idx)):('💧 Miss '+bsCoord(idx)));
-    if(won){bsPhase='over';bsSetStatus('🎉 YOU WIN!');showToast('🎉 YOU WIN!','ok');}
-    else bsSetStatus('⏳ Opponent turn...');
+    addBattleLog(hit?('💥 Hit! '+bsCoord(idx)+' — SHOOT AGAIN!'):('💧 Miss '+bsCoord(idx)));
+    if(won){
+      bsPhase='over';
+      bsSetStatus('🎉 YOU WIN!');
+      showToast('🎉 YOU WIN! Claiming prize...','ok');
+      // Auto-claim prize from contract
+      bsAutoClaimPrize(game);
+    } else if(hit){
+      bsSetStatus('💥 HIT! Shoot again!');
+      showToast('💥 Hit! Shoot again!','ok');
+    } else {
+      bsSetStatus('⏳ Opponent turn...');
+    }
   }catch(e){showToast('Error: '+(e.message||''),'err');}
 }
 
@@ -3214,31 +3364,80 @@ function bsAITurn(){
 function bsHandleGameUpdate(game){
   if(!game||!currentBsGame||currentBsGame==='AI')return;
   var isP1=game.player1_wallet===userAddr;
-  // Update enemy shots
-  var enemyShotsData=JSON.parse(isP1?(game.player2_shots||'[]'):(game.player1_shots||'[]'));
-  if(enemyShotsData.length!==bsEnemyShots.length){
-    bsEnemyShots=enemyShotsData;
-    bsRenderBoards();
-    var last=enemyShotsData[enemyShotsData.length-1];
-    if(last)addBattleLog(last.hit?('💥 Enemy hit '+bsCoord(last.idx)+'!'):('💧 Enemy missed '+bsCoord(last.idx)));
-  }
-  var myShotsData=JSON.parse(isP1?(game.player1_shots||'[]'):(game.player2_shots||'[]'));
-  if(myShotsData.length!==bsMyShots.length){bsMyShots=myShotsData;bsRenderBoards();}
+
+  // Game over check first
   if(game.status==='finished'){
     clearInterval(bsTimer);
     if(bsRealtimeChannel){sb.removeChannel(bsRealtimeChannel);bsRealtimeChannel=null;}
     bsPhase='over';
+    bsRenderBoards();
     bsSetStatus(game.winner_wallet===userAddr?'🎉 YOU WIN!':'💀 You lost!');
+    showToast(game.winner_wallet===userAddr?'🎉 YOU WIN!':'💀 You lost!',game.winner_wallet===userAddr?'ok':'err');
     return;
   }
-  var bothReady=game.player1_board&&game.player2_board;
-  if(bothReady&&bsPhase==='placing'){bsPhase='battle';bsRenderBoards();}
+
+  // Both boards ready - start battle phase
+  if(game.player1_board&&game.player2_board&&bsPhase==='placing'){
+    bsPhase='battle';
+    // Load my ships from DB if not set
+    if(bsMyShips.length===0){
+      var myBoardRaw=isP1?game.player1_board:game.player2_board;
+      if(myBoardRaw) bsMyShips=JSON.parse(myBoardRaw);
+    }
+    showToast('⚔️ Both players ready! Battle starts!','ok');
+  }
+
+  // Always reload MY ships from DB (in case of refresh or reconnect)
+  if(bsMyShips.length===0){
+    var myBoardStr=isP1?game.player1_board:game.player2_board;
+    if(myBoardStr) bsMyShips=JSON.parse(myBoardStr);
+  }
+
+  // ALWAYS sync shots from DB (don't rely on local state)
+  var myShotsRaw=isP1?game.player1_shots:game.player2_shots;
+  var newMyShots=JSON.parse(myShotsRaw||'[]');
+
+  var enemyShotsRaw=isP1?game.player2_shots:game.player1_shots;
+  var newEnemyShots=JSON.parse(enemyShotsRaw||'[]');
+
+  // Log new enemy shots
+  if(newEnemyShots.length>bsEnemyShots.length){
+    var added=newEnemyShots.slice(bsEnemyShots.length);
+    added.forEach(function(s){
+      addBattleLog(s.hit?('💥 Enemy hit '+bsCoord(s.idx)+'!'):('💧 Enemy missed '+bsCoord(s.idx)));
+    });
+  }
+
+  // Update local state from DB
+  bsMyShots=newMyShots;
+  bsEnemyShots=newEnemyShots;
+
+  // Always re-render boards
+  bsRenderBoards();
+
+  // Update status
   if(bsPhase==='battle'){
     var myTurn=game.current_turn===userAddr;
-    bsSetStatus(myTurn?'⚔️ YOUR TURN — click the BOTTOM board!':'⏳ Opponent turn...');
+    if(myTurn){
+      // Check if last enemy shot was a hit (they hit me and shoot again)
+      var lastEnemyShot=newEnemyShots[newEnemyShots.length-1];
+      if(lastEnemyShot&&lastEnemyShot.hit){
+        bsSetStatus('⚔️ YOUR TURN — click the BOTTOM board!');
+      } else {
+        bsSetStatus('⚔️ YOUR TURN — click the BOTTOM board!');
+      }
+    } else {
+      // Check if last MY shot was a hit (I hit them and shoot again)
+      var lastMyShot=newMyShots[newMyShots.length-1];
+      if(lastMyShot&&lastMyShot.hit){
+        bsSetStatus('⏳ Opponent hit! They shoot again...');
+      } else {
+        bsSetStatus('⏳ Opponent turn...');
+      }
+    }
   } else if(bsPhase==='placing'){
     var myBoard=isP1?game.player1_board:game.player2_board;
-    if(myBoard)bsSetStatus('⏳ Waiting for opponent to place ships...');
+    if(myBoard) bsSetStatus('⏳ Waiting for opponent to place ships...');
   }
 }
 
@@ -3246,26 +3445,38 @@ async function bsPollGame(){
   if(!currentBsGame||currentBsGame==='AI')return;
   try{
     var res=await sb.from('battleship_games').select('*').eq('id',currentBsGame).single();
-    var game=res.data;if(!game)return;
-    var isP1=game.player1_wallet===userAddr;
-    var enemyShotsData=JSON.parse(isP1?(game.player2_shots||'[]'):(game.player1_shots||'[]'));
-    if(enemyShotsData.length!==bsEnemyShots.length){
-      bsEnemyShots=enemyShotsData;bsRenderBoards();
-      var last=enemyShotsData[enemyShotsData.length-1];
-      if(last)addBattleLog(last.hit?('💥 Enemy hit '+bsCoord(last.idx)+'!'):('💧 Enemy missed '+bsCoord(last.idx)));
-    }
-    var myShotsData=JSON.parse(isP1?(game.player1_shots||'[]'):(game.player2_shots||'[]'));
-    if(myShotsData.length!==bsMyShots.length){bsMyShots=myShotsData;bsRenderBoards();}
-    if(game.status==='finished'){
-      clearInterval(bsTimer);bsPhase='over';
-      bsSetStatus(game.winner_wallet===userAddr?'🎉 YOU WIN!':'💀 You lost!');
-      return;
-    }
-    var bothReady=game.player1_board&&game.player2_board;
-    if(bothReady&&bsPhase==='placing'){bsPhase='battle';bsRenderBoards();}
-    if(bsPhase==='battle'){var myTurn=game.current_turn===userAddr;bsSetStatus(myTurn?'⚔️ YOUR TURN — click the BOTTOM board!':'⏳ Opponent turn...');}
-    else if(bsPhase==='placing'){var myBoard=isP1?game.player1_board:game.player2_board;if(myBoard)bsSetStatus('⏳ Waiting for opponent to place ships...');}
+    if(res.data) bsHandleGameUpdate(res.data);
   }catch(e){}
+}
+
+async function bsAutoClaimPrize(game){
+  if(!game||game.bet_token==='FREE'||parseFloat(game.bet_amount||0)<=0) return;
+  const contractGameId=game.contract_game_id||0;
+  if(!contractGameId||contractGameId===0){
+    showToast('🎉 You won! (Free game - no prize to claim)','ok');
+    return;
+  }
+  try{
+    await switchToLitVM();
+    const freshSigner=await provider.getSigner();
+    const coder=ethers.AbiCoder.defaultAbiCoder();
+    showToast('Claiming prize... Confirm in MetaMask 🏆','ok');
+    // Call declareWinner(gameId, winnerAddress)
+    const sel=ethers.id('declareWinner(uint256,address)').slice(0,10);
+    const data=sel+coder.encode(['uint256','address'],[BigInt(contractGameId),userAddr]).slice(2);
+    const tx=await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data,gasLimit:200000n});
+    await tx.wait();
+    showToast('🏆 Prize automatically sent to your wallet!','ok');
+    loadGateBal(true);
+  }catch(e){
+    const msg=e.reason||e.message||'';
+    if(msg.includes('Not authorized')){
+      showToast('🎉 You won! Opponent must confirm the result.','ok');
+    } else {
+      showToast('🎉 You won! Prize: '+(parseFloat(game.bet_amount||0)*2)+' '+game.bet_token,'ok');
+      console.log('declareWinner error:', msg);
+    }
+  }
 }
 
 function bsCoord(idx){return String.fromCharCode(65+idx%10)+(Math.floor(idx/10)+1);}
@@ -3375,7 +3586,7 @@ let diceBet = 50;
 const DICE_FACES = ['🎲','⚀','⚁','⚂','⚃','⚄','⚅'];
 function setDiceGuess(n){diceGuess=n;for(let i=1;i<=6;i++){const btn=document.getElementById('dguess'+i);if(!btn)continue;if(i===n){btn.style.borderColor='#7c3aed';btn.style.background='#2d1a4a';btn.style.color='#c4b5fd';}else{btn.style.borderColor='var(--border)';btn.style.background='var(--bg3)';btn.style.color='var(--muted)';}}}
 function setDiceBet(amount){diceBet=amount;[50,100,200,500].forEach(b=>{const btn=document.getElementById('dbet'+b);if(!btn)return;if(b===amount){btn.style.borderColor='var(--gold)';btn.style.background='rgba(245,200,66,0.1)';btn.style.color='var(--gold)';}else{btn.style.borderColor='var(--border)';btn.style.background='var(--bg3)';btn.style.color='var(--muted)';}});const win=(diceBet*5*0.97).toFixed(1);document.getElementById('diceWinAmt').textContent=win+' GATE';}
-async function loadDice(){try{const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');const dice=new ethers.Contract(GATE_DICE,DICE_ABI,p);const [pool]=await dice.getStats();document.getElementById('diceHousePool').textContent=parseFloat(ethers.formatEther(pool)).toFixed(0)+' GATE';if(userAddr){const [wins,losses]=await Promise.all([dice.playerWins(userAddr),dice.playerLosses(userAddr)]);document.getElementById('diceMyWins').textContent=wins.toString();document.getElementById('diceMyLosses').textContent=losses.toString();}}catch(e){}}
+async function loadDice(){try{const p=getReadProvider();const dice=new ethers.Contract(GATE_DICE,DICE_ABI,p);const [pool]=await dice.getStats();document.getElementById('diceHousePool').textContent=parseFloat(ethers.formatEther(pool)).toFixed(0)+' GATE';if(userAddr){const [wins,losses]=await Promise.all([dice.playerWins(userAddr),dice.playerLosses(userAddr)]);document.getElementById('diceMyWins').textContent=wins.toString();document.getElementById('diceMyLosses').textContent=losses.toString();}}catch(e){}}
 async function rollDice(){
   if(!userAddr){showToast('Connect wallet first','err');return;}
   if(!diceGuess){showToast('Pick a number first','err');return;}
@@ -3406,7 +3617,7 @@ async function rollDice(){
 // ── LOTTERY ──
 let lotteryQty = 1;
 function setLotteryQty(qty){lotteryQty=qty;[1,2,3,5].forEach(q=>{const btn=document.getElementById('lqty'+q);if(!btn)return;if(q===qty){btn.style.borderColor='var(--gold)';btn.style.background='rgba(245,200,66,0.1)';btn.style.color='var(--gold)';}else{btn.style.borderColor='var(--border)';btn.style.background='var(--bg3)';btn.style.color='var(--muted)';}});document.getElementById('lotteryCost').textContent=(qty*10)+' GATE';}
-async function loadLottery(){try{const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');const lottery=new ethers.Contract(GATE_LOTTERY,LOTTERY_ABI,p);const [roundId,playerCount,pot]=await lottery.getCurrentRound();document.getElementById('lotteryRound').textContent=roundId.toString();document.getElementById('lotteryPot').textContent=parseFloat(ethers.formatEther(pot)).toFixed(0)+' GATE';document.getElementById('lotteryPlayers').textContent=playerCount.toString();document.getElementById('lotteryBar').style.width=(Number(playerCount)*100/20)+'%';if(userAddr){const myT=await lottery.getMyTickets(roundId);document.getElementById('myLotteryTickets').textContent=myT.toString();}}catch(e){}}
+async function loadLottery(){try{const p=getReadProvider();const lottery=new ethers.Contract(GATE_LOTTERY,LOTTERY_ABI,p);const [roundId,playerCount,pot]=await lottery.getCurrentRound();document.getElementById('lotteryRound').textContent=roundId.toString();document.getElementById('lotteryPot').textContent=parseFloat(ethers.formatEther(pot)).toFixed(0)+' GATE';document.getElementById('lotteryPlayers').textContent=playerCount.toString();document.getElementById('lotteryBar').style.width=(Number(playerCount)*100/20)+'%';if(userAddr){const myT=await lottery.getMyTickets(roundId);document.getElementById('myLotteryTickets').textContent=myT.toString();}}catch(e){}}
 async function buyLotteryTicket(){
   if(!userAddr){showToast('Connect wallet first','err');return;}
   const btn=document.getElementById('buyTicketBtn');
@@ -3435,17 +3646,96 @@ async function finalizeProposal(id){}
 async function cancelDAOProposal(id){}
 
 // ── MARKETPLACE ──
-async function resolveIPFS(uri){if(!uri)return '';if(uri.startsWith('ipfs://'))return 'https://gateway.pinata.cloud/ipfs/'+uri.slice(7);return uri;}
-async function fetchNFTMeta(uri){const r=await resolveIPFS(uri);const res=await fetch(r,{signal:AbortSignal.timeout(8000)});return await res.json();}
+// ── NFT IMAGE CACHE ──
+const _nftImgCache={};
+const _nftMetaCache={};
+
+function getCachedNFTImg(key){
+  const c=_nftImgCache[key];
+  if(c&&Date.now()-c.t<3600000) return c.url; // 1hr cache
+  return null;
+}
+function setCachedNFTImg(key,url){_nftImgCache[key]={url,t:Date.now()};}
+
+async function resolveIPFS(uri){
+  if(!uri) return '';
+  if(uri.startsWith('data:')) return uri;
+  if(uri.startsWith('ipfs://')){
+    const hash=uri.slice(7);
+    // Use Cloudflare as primary (fastest, globally cached)
+    return 'https://cloudflare-ipfs.com/ipfs/'+hash;
+  }
+  if(uri.startsWith('https://ipfs.io/ipfs/')) return uri.replace('https://ipfs.io/ipfs/','https://cloudflare-ipfs.com/ipfs/');
+  if(uri.startsWith('https://gateway.pinata.cloud/')) return uri;
+  return uri;
+}
+
+async function resolveIPFSWithFallback(uri){
+  if(!uri) return '';
+  if(uri.startsWith('data:')) return uri;
+  // Check cache first
+  const cached=getCachedNFTImg(uri);
+  if(cached) return cached;
+  const hash=uri.startsWith('ipfs://')?uri.slice(7)
+    :uri.includes('/ipfs/')?uri.split('/ipfs/')[1]
+    :null;
+  if(hash){
+    // Cloudflare is fastest and has best global caching
+    const primary='https://cloudflare-ipfs.com/ipfs/'+hash;
+    setCachedNFTImg(uri,primary);
+    return primary;
+  }
+  setCachedNFTImg(uri,uri);
+  return uri;
+}
+async function fetchNFTMeta(uri){
+  if(!uri) throw new Error('No URI');
+  // Check meta cache (1hr)
+  if(_nftMetaCache[uri]&&Date.now()-_nftMetaCache[uri].t<3600000)
+    return _nftMetaCache[uri].data;
+  // Handle base64 encoded JSON
+  if(uri.startsWith('data:application/json;base64,')){
+    const data=JSON.parse(atob(uri.split(',')[1]));
+    _nftMetaCache[uri]={data,t:Date.now()};
+    return data;
+  }
+  if(uri.startsWith('data:application/json,')){
+    const data=JSON.parse(decodeURIComponent(uri.split(',')[1]));
+    _nftMetaCache[uri]={data,t:Date.now()};
+    return data;
+  }
+  const r=await resolveIPFS(uri);
+  const res=await fetch(r,{signal:AbortSignal.timeout(10000)});
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  const data=await res.json();
+  _nftMetaCache[uri]={data,t:Date.now()};
+  return data;
+}
 async function loadMarketplace(){
   try{
-    const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');
+    const p=getReadProvider();
     const market=new ethers.Contract(NFT_MARKET,NFT_MARKET_ABI,p);
     const [count,volume]=await Promise.all([market.listingCount(),market.totalVolume()]);
     document.getElementById('mktVolume').textContent=parseFloat(ethers.formatEther(volume)).toFixed(4)+' zkLTC';
-    if(count===0n){document.getElementById('mktListings').textContent='0';document.getElementById('marketListings').innerHTML='<div class="app-empty">No listings yet</div>';return;}
-    const listings=await market.getListings(1,50);
-    const active=listings.filter(l=>l.active);
+    const countNum=Number(count);
+    if(!countNum||countNum===0){document.getElementById('mktListings').textContent='0';document.getElementById('marketListings').innerHTML='<div class="app-empty">No listings yet</div>';return;}
+    const listings=await market.getListings(1,Math.min(countNum,50));
+    const active=[];
+    if(listings&&listings.length){
+      for(let i=0;i<listings.length;i++){
+        const l=listings[i];
+        if(l&&l.active===true){
+          active.push({
+            seller:l.seller,
+            nftContract:l.nftContract,
+            tokenId:l.tokenId,
+            price:l.price,
+            active:true,
+            _id:i+1
+          });
+        }
+      }
+    }
     document.getElementById('mktListings').textContent=active.length;
     const grid=document.createElement('div');
     grid.style.cssText='display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;';
@@ -3458,11 +3748,16 @@ async function loadMarketplace(){
         const nft=new ethers.Contract(l.nftContract,ERC721_ABI,p);
         let uri=await nft.tokenURI(l.tokenId);
         const meta=await fetchNFTMeta(uri);
-        if(meta.image)img=await resolveIPFS(meta.image);
+        if(meta.image){
+          // Try multiple IPFS gateways for image
+          img=await resolveIPFSWithFallback(meta.image);
+        }
         name=meta.name||name;
-      }catch{}
+      }catch(err){
+        console.log('NFT meta error:',l.nftContract,l.tokenId.toString(),err.message);
+      }
       const isOwn=userAddr&&l.seller.toLowerCase()===userAddr.toLowerCase();
-      const listingIdx=i+1;
+      const listingIdx=l._id; // Real contract listing ID
       const priceWei=l.price; // Keep as BigInt
       const priceEth=parseFloat(ethers.formatEther(priceWei)).toFixed(4);
 
@@ -3470,9 +3765,31 @@ async function loadMarketplace(){
       card.style.cssText='background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;';
       // Image
       const imgDiv=document.createElement('div');
-      imgDiv.style.cssText='aspect-ratio:1;background:var(--bg3);overflow:hidden;';
-      if(img){const im=document.createElement('img');im.src=img;im.loading='lazy';im.style.cssText='width:100%;height:100%;object-fit:cover;';imgDiv.appendChild(im);}
-      else imgDiv.innerHTML='<div style="font-size:40px;display:flex;align-items:center;justify-content:center;height:100%;">🖼️</div>';
+      imgDiv.style.cssText='aspect-ratio:1;background:var(--bg3);overflow:hidden;position:relative;';
+      if(img){
+        const im=document.createElement('img');
+        im.loading='lazy';
+        im.style.cssText='width:100%;height:100%;object-fit:cover;';
+        im.alt=name;
+        // Try main URL first, fallback to other gateways on error
+        im.src=img;
+        im.onerror=async function(){
+          // Try Pinata as fallback
+          if(img.includes('cloudflare-ipfs.com')){
+            const hash=img.split('/ipfs/')[1];
+            if(hash) this.src='https://gateway.pinata.cloud/ipfs/'+hash;
+          } else if(img.includes('pinata.cloud')){
+            const hash=img.split('/ipfs/')[1];
+            if(hash) this.src='https://ipfs.io/ipfs/'+hash;
+          } else {
+            // Show placeholder
+            imgDiv.innerHTML='<div style="font-size:36px;display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);">🖼️</div>';
+          }
+        };
+        imgDiv.appendChild(im);
+      } else {
+        imgDiv.innerHTML='<div style="font-size:36px;display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);">🖼️</div>';
+      }
       // Info
       const info=document.createElement('div');
       info.style.cssText='padding:12px;';
@@ -3507,16 +3824,41 @@ async function buyNFT(listingId,price){
   try{
     await switchToLitVM();
     const freshSigner=await provider.getSigner();
-    // price is BigInt passed directly from contract
-    const exactPrice=BigInt(price.toString());
+    // Re-fetch exact price from contract to avoid precision issues
+    const p=getReadProvider();
+    const marketRead=new ethers.Contract(NFT_MARKET,NFT_MARKET_ABI,p);
+    const listings=await marketRead.getListings(listingId,listingId);
+    if(!listings||!listings[0]||!listings[0].active){
+      showToast('Listing not found or inactive','err');return;
+    }
+    const exactPrice=listings[0].price; // exact BigInt from contract
     showToast('Confirm in MetaMask...','ok');
     const market=new ethers.Contract(NFT_MARKET,NFT_MARKET_ABI,freshSigner);
-    await(await market.buyNFT(listingId,{value:exactPrice})).wait();
+    const tx=await market.buyNFT(listingId,{value:exactPrice});
+    await tx.wait();
     showToast('NFT purchased! 🎉','ok');
     loadMarketplace();
-  }catch(e){showToast((e.reason||e.message||'Failed').slice(0,60),'err');}
+  }catch(e){
+    const msg=e.reason||e.message||'Failed';
+    showToast(msg.slice(0,60),'err');
+  }
 }
-async function cancelNFTListing(id){if(!userAddr)return;try{await switchToLitVM();const market=new ethers.Contract(NFT_MARKET,NFT_MARKET_ABI,signer);await(await market.cancelListing(id)).wait();showToast('Listing cancelled','ok');loadMarketplace();}catch(e){showToast((e.reason||e.message||'Failed').slice(0,60),'err');}}
+async function cancelNFTListing(id){
+  if(!userAddr)return;
+  try{
+    await switchToLitVM();
+    const freshSigner=await provider.getSigner();
+    const market=new ethers.Contract(NFT_MARKET,NFT_MARKET_ABI,freshSigner);
+    showToast('Cancelling listing...','ok');
+    const tx=await market.cancelListing(id);
+    await tx.wait();
+    showToast('Listing cancelled ✓','ok');
+    loadMarketplace();
+  }catch(e){
+    const msg=e.reason||e.message||'Failed';
+    showToast(msg.slice(0,60),'err');
+  }
+}
 
 // ── EXPLORE ──
 let searchFilter='users',searchTimer=null;
@@ -3616,21 +3958,22 @@ async function loadNotifications(){
     // Batch fetch all users at once instead of one by one
     const {data:userList}=await sb.from('users').select('wallet,username,avatar_url').in('wallet',wallets);
     if(userList)userList.forEach(u=>{users[u.wallet]=u;_userCache[u.wallet]={data:u,t:Date.now()};});
-    el.innerHTML=notifs.map(n=>{
+    // Clear loader
+    el.innerHTML='';
+    notifs.forEach(n=>{
       const u=users[n.from_wallet]||{};
       const name=u.username||sAddr(n.from_wallet);
-      const avatar=u.avatar_url?('<img src="'+u.avatar_url+'" style="width:100%;height:100%;object-fit:cover;"/>'):'🧑';
-      const icon=n.type==='like'?'❤️':n.type==='follow'?'👤':n.type==='challenge'?'⚔️':'💬';
       let text='';
       if(n.type==='like')text='<b>'+esc(name)+'</b> liked your post';
       else if(n.type==='follow')text='<b>'+esc(name)+'</b> followed you';
       else if(n.type==='challenge')text='<b>'+esc(name)+'</b> challenges you to ⚔️ Battleship!';
       else text='<b>'+esc(name)+'</b> sent you a message';
-      // Build notification card using DOM
       const card=document.createElement('div');
       card.style.cssText='display:flex;align-items:flex-start;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border);background:'+(n.read?'':'rgba(245,200,66,0.03)')+';';
-      const avDiv=document.createElement('div');avDiv.style.cssText='width:40px;height:40px;border-radius:50%;background:var(--bg3);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;';
-      if(u.avatar_url){const img=document.createElement('img');img.src=u.avatar_url;img.style.cssText='width:100%;height:100%;object-fit:cover;';avDiv.appendChild(img);}else avDiv.textContent='🧑';
+      const avDiv=document.createElement('div');
+      avDiv.style.cssText='width:40px;height:40px;border-radius:50%;background:var(--bg3);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;';
+      if(u.avatar_url){const img=document.createElement('img');img.src=u.avatar_url;img.style.cssText='width:100%;height:100%;object-fit:cover;';avDiv.appendChild(img);}
+      else avDiv.textContent='🧑';
       const body=document.createElement('div');body.style.cssText='flex:1;';
       body.innerHTML='<div style="font-size:14px;line-height:1.5;">'+text+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">'+tAgo(n.created_at)+'</div>';
       if(n.type==='challenge'){
@@ -3641,35 +3984,109 @@ async function loadNotifications(){
         db.onclick=(function(fw,nid){return function(e){declineChallenge(fw,nid,e);};})(n.from_wallet,n.id);
         btns.appendChild(ab);btns.appendChild(db);body.appendChild(btns);
       }
-      if(!n.read){const dot=document.createElement('div');dot.style.cssText='width:8px;height:8px;border-radius:50%;background:var(--gold);flex-shrink:0;margin-top:4px;';card.appendChild(avDiv);card.appendChild(body);card.appendChild(dot);}
-      else{card.appendChild(avDiv);card.appendChild(body);}
+      card.appendChild(avDiv);card.appendChild(body);
+      if(!n.read){const dot=document.createElement('div');dot.style.cssText='width:8px;height:8px;border-radius:50%;background:var(--gold);flex-shrink:0;margin-top:4px;';card.appendChild(dot);}
       el.appendChild(card);
-      return '';
-
-
     });
   }catch(e){el.innerHTML='<div class="app-empty">Failed to load</div>';}
 }
 async function markRead(id){await sb.from('notifications').update({read:true}).eq('id',id);updateNotifBadge();}
 async function markAllRead(){if(!userAddr)return;await sb.from('notifications').update({read:true}).eq('to_wallet',userAddr).eq('read',false);loadNotifications();}
-async function updateNotifBadge(){if(!userAddr)return;const {count}=await sb.from('notifications').select('*',{count:'exact',head:true}).eq('to_wallet',userAddr).eq('read',false);const badge=document.getElementById('notifBadge');if(count>0){badge.style.display='inline';badge.textContent=count;}else badge.style.display='none';}
+async function updateNotifBadge(){
+  if(!userAddr)return;
+  // Bell = likes, follows, challenges (not DMs)
+  const {count}=await sb.from('notifications').select('*',{count:'exact',head:true})
+    .eq('to_wallet',userAddr).eq('read',false).neq('type','dm');
+  const badge=document.getElementById('notifBadge');
+  if(badge){if(count>0){badge.style.display='inline';badge.textContent=count;}else badge.style.display='none';}
+}
+async function updateUnreadBadge(){
+  if(!userAddr)return;
+  const {count}=await sb.from('messages').select('*',{count:'exact',head:true})
+    .eq('to_wallet',userAddr).eq('read',false);
+  const badge=document.getElementById('unreadBadge');
+  if(badge){if(count>0){badge.style.display='inline';badge.textContent=count;}else badge.style.display='none';}
+}
 async function createNotif(toWallet,type,postId=null){if(!userAddr||userAddr===toWallet)return;try{await sb.from('notifications').insert({to_wallet:toWallet,from_wallet:userAddr,type,post_id:postId||undefined});}catch(e){}}
 
 // ── LAUNCHPAD ──
 let ltOpts={ltMint:false,ltBurn:false,ltPause:false};
 function toggleLtOpt(id){ltOpts[id]=!ltOpts[id];const btn=document.getElementById(id);if(ltOpts[id]){btn.style.borderColor='#7c3aed';btn.style.background='#2d1a4a';btn.style.color='#c4b5fd';}else{btn.style.borderColor='var(--border)';btn.style.background='var(--bg3)';btn.style.color='var(--muted)';}}
-async function loadLaunchpad(){try{const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');const factory=new ethers.Contract(TOKEN_FACTORY,FACTORY_ABI,p);const fee=await factory.creationFee();const total=await factory.totalTokensCreated();document.getElementById('totalTokensCreated').textContent=total.toString();document.getElementById('ltFeeDisplay').textContent=parseFloat(ethers.formatEther(fee)).toFixed(4)+' zkLTC';}catch(e){}}
+async function loadLaunchpad(){try{const p=getReadProvider();const factory=new ethers.Contract(TOKEN_FACTORY,FACTORY_ABI,p);const fee=await factory.creationFee();const total=await factory.totalTokensCreated();document.getElementById('totalTokensCreated').textContent=total.toString();document.getElementById('ltFeeDisplay').textContent=parseFloat(ethers.formatEther(fee)).toFixed(4)+' zkLTC';}catch(e){}}
 async function launchToken(){if(!userAddr){showToast('Connect wallet first','err');return;}const name=document.getElementById('ltName').value.trim();const symbol=document.getElementById('ltSymbol').value.trim();const decimals=parseInt(document.getElementById('ltDecimals').value)||18;const supply=document.getElementById('ltSupply').value.trim();if(!name||!symbol||!supply){showToast('Fill all required fields','err');return;}try{await switchToLitVM();const factory=new ethers.Contract(TOKEN_FACTORY,FACTORY_ABI,signer);const fee=await factory.creationFee();const tx=await factory.createToken(name,symbol,decimals,supply,ltOpts.ltMint,ltOpts.ltBurn,ltOpts.ltPause,{value:fee});await tx.wait();showToast('🎉 Token '+symbol+' deployed!','ok');loadLaunchpad();}catch(e){showToast((e.reason||e.message||'Failed').slice(0,60),'err');}}
 
 // ── PRESALE ──
-async function loadPresaleInfo(){try{const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');const pc=new ethers.Contract(GATE_PRESALE,PRESALE_ABI,p);const [raised,,gateInContract,active]=await pc.getInfo();const raisedF=parseFloat(ethers.formatEther(raised));const pct=Math.min(100,(raisedF/100)*100).toFixed(1);document.getElementById('presaleStatus').textContent=active?'🟢 Active':'🔴 Inactive';document.getElementById('presaleRaised').textContent=raisedF.toFixed(4)+' / 100';document.getElementById('presalePct').textContent=pct+'%';document.getElementById('presaleBar').style.width=pct+'%';document.getElementById('presaleGatePool').textContent=parseFloat(ethers.formatEther(gateInContract)).toFixed(0)+' GATE';if(userAddr){const contrib=await pc.contributed(userAddr);document.getElementById('myContrib').textContent=parseFloat(ethers.formatEther(contrib)).toFixed(4)+' zkLTC';}}catch(e){}}
+async function loadPresaleInfo(){try{const p=getReadProvider();const pc=new ethers.Contract(GATE_PRESALE,PRESALE_ABI,p);const [raised,,gateInContract,active]=await pc.getInfo();const raisedF=parseFloat(ethers.formatEther(raised));const pct=Math.min(100,(raisedF/100)*100).toFixed(1);document.getElementById('presaleStatus').textContent=active?'🟢 Active':'🔴 Inactive';document.getElementById('presaleRaised').textContent=raisedF.toFixed(4)+' / 100';document.getElementById('presalePct').textContent=pct+'%';document.getElementById('presaleBar').style.width=pct+'%';document.getElementById('presaleGatePool').textContent=parseFloat(ethers.formatEther(gateInContract)).toFixed(0)+' GATE';if(userAddr){const contrib=await pc.contributed(userAddr);document.getElementById('myContrib').textContent=parseFloat(ethers.formatEther(contrib)).toFixed(4)+' zkLTC';}}catch(e){}}
 function updatePresaleCalc(){const amt=parseFloat(document.getElementById('presaleAmt').value);document.getElementById('presaleCalc').textContent=amt>0?'You receive: '+(amt*1000).toLocaleString()+' GATE':'';}
 async function buyPresale(){if(!userAddr){showToast('Connect wallet first','err');return;}const amt=document.getElementById('presaleAmt').value;if(!amt||parseFloat(amt)<=0){showToast('Enter amount','err');return;}try{await switchToLitVM();const freshSigner=await provider.getSigner();const pc=new ethers.Contract(GATE_PRESALE,PRESALE_ABI,freshSigner);const value=ethers.parseEther(amt);const tx=await pc.buy({value});await tx.wait();showToast('🎉 GATE purchased!','ok');loadPresaleInfo();loadGateBal();}catch(e){showToast((e.reason||e.message||'Failed').slice(0,60),'err');}}
 
 // ── MESSAGES ──
 let currentDMWallet=null,dmTimer=null;
+let convsRealtimeChannel=null;
+let _lastMsgCount=0;
+let _msgPollTimer=null;
+
+function subscribeToConversations(){
+  if(!userAddr||convsRealtimeChannel) return;
+
+  // Realtime WebSocket
+  convsRealtimeChannel=sb.channel('msgs-'+userAddr+'-'+Date.now())
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},function(payload){
+      const m=payload.new;
+      if(!m) return;
+      if(m.to_wallet!==userAddr&&m.from_wallet!==userAddr) return;
+      handleNewMessage(m);
+    })
+    .subscribe();
+
+  // Polling backup every 3s to catch missed Realtime events
+  clearInterval(_msgPollTimer);
+  _msgPollTimer=setInterval(async function(){
+    if(!userAddr) return;
+    try{
+      const {count}=await sb.from('messages').select('*',{count:'exact',head:true})
+        .eq('to_wallet',userAddr).eq('read',false);
+      if(count!==_lastMsgCount){
+        _lastMsgCount=count||0;
+        updateUnreadBadge();
+        // Refresh conv list if open
+        const convList=document.getElementById('convList');
+        if(convList&&convList.style.display!=='none') loadConversations();
+      }
+    }catch(e){}
+  },3000);
+}
+
+function handleNewMessage(m){
+  const isToMe=m.to_wallet===userAddr;
+  if(isToMe){
+    _lastMsgCount++;
+    updateUnreadBadge();
+  }
+  // Refresh conv list if open
+  const convList=document.getElementById('convList');
+  if(convList&&convList.style.display!=='none') loadConversations();
+  // If in active DM - show message instantly
+  if(currentDMWallet){
+    const partner=isToMe?m.from_wallet:m.to_wallet;
+    if(partner===currentDMWallet){
+      // Make sure convView is visible
+      const cv=document.getElementById('convView');
+      if(cv&&cv.style.display==='none') cv.style.display='flex';
+      loadMessages();
+      if(isToMe){
+        _lastMsgCount=Math.max(0,_lastMsgCount-1);
+        updateUnreadBadge();
+        sb.from('messages').update({read:true})
+          .eq('from_wallet',currentDMWallet).eq('to_wallet',userAddr);
+      }
+    }
+  }
+}
+
 async function loadConversations(){
   if(!userAddr)return;
+  subscribeToConversations();
   const el=document.getElementById('convListItems');
   el.innerHTML='<div class="app-loader">Loading...</div>';
   try{
@@ -3721,21 +4138,28 @@ async function openDM(wallet){
   // Realtime for messages
   clearInterval(dmTimer);
   if(dmRealtimeChannel){sb.removeChannel(dmRealtimeChannel);dmRealtimeChannel=null;}
-  dmRealtimeChannel=sb.channel('dm-'+userAddr+'-'+wallet)
+  dmRealtimeChannel=sb.channel('dm-'+userAddr+'-'+wallet+'-'+Date.now())
     .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},function(payload){
       const m=payload.new;
+      if(!m) return;
       if((m.from_wallet===wallet&&m.to_wallet===userAddr)||(m.from_wallet===userAddr&&m.to_wallet===wallet)){
         loadMessages();
-        if(m.from_wallet===wallet) sb.from('messages').update({read:true}).eq('from_wallet',wallet).eq('to_wallet',userAddr);
+        if(m.from_wallet===wallet){
+          sb.from('messages').update({read:true}).eq('from_wallet',wallet).eq('to_wallet',userAddr);
+          updateUnreadBadge();
+        }
       }
     })
     .subscribe();
+  // Polling backup for active DM every 5s (Realtime handles instant delivery)
+  dmTimer=setInterval(function(){if(currentDMWallet)loadMessages();},5000);
 }
 function openDMByAddr(){const addr=document.getElementById('newDmAddr').value.trim().toLowerCase();if(!addr||!addr.startsWith('0x')){showToast('Enter valid address','err');return;}openDM(addr);}
 function showConvList(){
   currentDMWallet=null;
   clearInterval(dmTimer);
   if(dmRealtimeChannel){sb.removeChannel(dmRealtimeChannel);dmRealtimeChannel=null;}
+  updateUnreadBadge();
   document.getElementById('convList').style.display='block';
   document.getElementById('convView').style.display='none';
   document.getElementById('dmBackBtn').style.display='none';
@@ -3747,7 +4171,7 @@ async function loadMessages(){
   const el=document.getElementById('msgList');
   const {data:msgs}=await sb.from('messages').select('*').or('and(from_wallet.eq.'+userAddr+',to_wallet.eq.'+currentDMWallet+'),and(from_wallet.eq.'+currentDMWallet+',to_wallet.eq.'+userAddr+')').order('created_at',{ascending:true});
   if(!msgs||msgs.length===0){el.innerHTML='<div style="text-align:center;color:var(--muted);padding:40px;">No messages yet 👋</div>';return;}
-  const atBottom=el.scrollHeight-el.scrollTop<=el.clientHeight+50;
+  const atBottom=(el.scrollHeight-el.scrollTop<=el.clientHeight+80)||(el.scrollHeight===0);
   el.innerHTML='';
   msgs.forEach(function(m){
     const mine=m.from_wallet===userAddr;
@@ -3767,14 +4191,15 @@ async function loadMessages(){
     const timeEl=document.createElement('div');timeEl.style.cssText='font-size:10px;opacity:.6;margin-top:4px;text-align:'+(mine?'right':'left')+';';timeEl.textContent=tAgo(m.created_at);bubble.appendChild(timeEl);
     wrap.appendChild(bubble);el.appendChild(wrap);
   });
-  if(atBottom)el.scrollTop=el.scrollHeight;
+  // Always scroll to bottom when loading messages
+  setTimeout(function(){el.scrollTop=el.scrollHeight;},50);
 }
 async function sendDM(){if(!userAddr){showToast('Connect wallet first','err');return;}if(!currentDMWallet)return;const input=document.getElementById('msgInput');const content=input.value.trim();if(!content)return;input.value='';try{await sb.from('messages').insert({from_wallet:userAddr,to_wallet:currentDMWallet,content});await createNotif(currentDMWallet,'dm');loadMessages();}catch(e){showToast('Failed','err');input.value=content;}}
 function openConversation(wallet){openDM(wallet);}
 function openDMWith(wallet){showTab('messages');setTimeout(function(){openDM(wallet);},300);}
 
 // ── STAKING ──
-async function loadStakingInfo(){try{const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');const sc=new ethers.Contract(GATE_STAKING,STAKING_ABI,p);const [rp,ts]=await Promise.all([sc.rewardPool(),sc.totalStaked()]);document.getElementById('rewardPoolVal').textContent=parseFloat(ethers.formatEther(rp)).toFixed(0)+' GATE';document.getElementById('totalStakedVal').textContent=parseFloat(ethers.formatEther(ts)).toFixed(2);if(userAddr){const [staked,pending]=await sc.getStakeInfo(userAddr);document.getElementById('myStaked').textContent=parseFloat(ethers.formatEther(staked)).toFixed(2);document.getElementById('myPending').textContent=parseFloat(ethers.formatEther(pending)).toFixed(4);}}catch(e){}}
+async function loadStakingInfo(){try{const p=getReadProvider();const sc=new ethers.Contract(GATE_STAKING,STAKING_ABI,p);const [rp,ts]=await Promise.all([sc.rewardPool(),sc.totalStaked()]);document.getElementById('rewardPoolVal').textContent=parseFloat(ethers.formatEther(rp)).toFixed(0)+' GATE';document.getElementById('totalStakedVal').textContent=parseFloat(ethers.formatEther(ts)).toFixed(2);if(userAddr){const [staked,pending]=await sc.getStakeInfo(userAddr);document.getElementById('myStaked').textContent=parseFloat(ethers.formatEther(staked)).toFixed(2);document.getElementById('myPending').textContent=parseFloat(ethers.formatEther(pending)).toFixed(4);}}catch(e){}}
 let stakingTimer;
 async function stakeGATE(){if(!userAddr){showToast('Connect wallet first','err');return;}const amt=document.getElementById('stakeAmount').value;if(!amt||parseFloat(amt)<=0){showToast('Enter amount','err');return;}try{await switchToLitVM();const freshSigner=await provider.getSigner();const gate=new ethers.Contract(GATE_TOKEN,GATE_ABI,freshSigner);const amount=ethers.parseEther(String(amt));showToast('Approving GATE...','ok');await(await gate.approve(GATE_STAKING,amount)).wait();showToast('Staking...','ok');const iface=new ethers.Interface(['function stake(uint256 amount)']);await(await freshSigner.sendTransaction({to:GATE_STAKING,data:iface.encodeFunctionData('stake',[amount])})).wait();showToast('Staked! 💎','ok');loadStakingInfo();loadGateBal();}catch(e){showToast((e.reason||e.message||'Failed').slice(0,50),'err');}}
 async function claimGATE(){if(!userAddr){showToast('Connect wallet first','err');return;}try{await switchToLitVM();const freshSigner=await provider.getSigner();const iface=new ethers.Interface(['function claim()']);await(await freshSigner.sendTransaction({to:GATE_STAKING,data:iface.encodeFunctionData('claim',[])})).wait();showToast('Rewards claimed! 🎉','ok');loadStakingInfo();loadGateBal();}catch(e){showToast((e.reason||e.message||'Failed').slice(0,50),'err');}}
@@ -3792,7 +4217,7 @@ async function checkBellFollowers(authorWallet){try{const {data:followers}=await
 async function repostPost(postId,authorWallet,btn){if(!userAddr){showToast('Connect wallet first','err');return;}if(userAddr===authorWallet.toLowerCase()){showToast("Cannot repost own post",'err');return;}try{const {data:existing}=await sb.from('posts').select('id').eq('repost_of',postId).eq('author_wallet',userAddr).single();if(existing){showToast('Already reposted','err');return;}const {data:origPost}=await sb.from('posts').select('*').eq('id',postId).single();if(!origPost)return;await sb.from('posts').insert({author_wallet:userAddr,content:origPost.content,image_urls:origPost.image_urls||[],repost_of:postId,repost_by:userAddr,repost_by_name:currentUser?.username||sAddr(userAddr),likes_count:0,reposts_count:0});const newCount=(parseInt(document.getElementById('rpcnt-'+postId)?.textContent||'0'))+1;await sb.from('posts').update({reposts_count:newCount}).eq('id',postId);if(document.getElementById('rpcnt-'+postId))document.getElementById('rpcnt-'+postId).textContent=newCount;btn.style.color='var(--green)';showToast('🔁 Reposted!','ok');await createNotif(authorWallet,'repost',postId);loadPosts();}catch(e){showToast('Failed','err');}}
 
 // ── REWARDS POOL ──
-async function loadRewardsPool(){try{const p=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');const r=new ethers.Contract(GATE_REWARDS,REWARDS_ABI,p);const bal=await r.poolBalance();const el=document.getElementById('rewardsPoolBal');if(el)el.textContent=parseFloat(ethers.formatEther(bal)).toFixed(0)+' GATE';}catch(e){}}
+async function loadRewardsPool(){try{const p=getReadProvider();const r=new ethers.Contract(GATE_REWARDS,REWARDS_ABI,p);const bal=await r.poolBalance();const el=document.getElementById('rewardsPoolBal');if(el)el.textContent=parseFloat(ethers.formatEther(bal)).toFixed(0)+' GATE';}catch(e){}}
 
 // ── HELPERS ──
 let toastT;
@@ -3816,7 +4241,7 @@ function tAgo(ts){const d=(Date.now()-new Date(ts))/1000;if(d<60)return'now';if(
 // ── SUPPLY COUNTS ──
 async function loadPassSupply(){
   try{
-    const p=new ethers.JsonRpcProvider('https://bsc-dataseed.binance.org/');
+    const p=getBNBProvider();
     const abi=['function totalSupply() view returns(uint256)','function MAX_SUPPLY() view returns(uint256)'];
     const gold=new ethers.Contract(GOLD_PASS,abi,p);
     const silver=new ethers.Contract(SILVER_PASS,abi,p);
@@ -3844,6 +4269,38 @@ async function loadPassSupply(){
 
 // ── INIT ──
 document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open');}));
+
+// ── VISIBILITY: Pause Realtime when tab hidden, resume when visible ──
+document.addEventListener('visibilitychange',function(){
+  if(document.hidden){
+    // Tab hidden - pause polling to save resources
+    clearInterval(_msgPollTimer);
+    clearInterval(dmTimer);
+    clearInterval(stakingTimer);
+  } else {
+    // Tab visible again - resume
+    if(userAddr){
+      // Restart message polling
+      if(!_msgPollTimer){
+        _msgPollTimer=setInterval(async function(){
+          if(!userAddr)return;
+          try{
+            const {count}=await sb.from('messages').select('*',{count:'exact',head:true}).eq('to_wallet',userAddr).eq('read',false);
+            const c=count||0;
+            if(c!==_lastMsgCount){_lastMsgCount=c;updateUnreadBadge();
+              const convList=document.getElementById('convList');
+              if(convList&&convList.style.display!=='none')loadConversations();
+            }
+          }catch(e){}
+        },5000);
+      }
+      // Refresh data that might have changed
+      updateUnreadBadge();
+      updateNotifBadge();
+      loadGateBal(true);
+    }
+  }
+});
 const obs=new IntersectionObserver(e=>e.forEach(x=>{if(x.isIntersecting){x.target.classList.add('in');obs.unobserve(x.target);}}),{threshold:0.08});
 document.querySelectorAll('.fade').forEach(el=>obs.observe(el));
 const sObs=new IntersectionObserver(e=>e.forEach(x=>{if(x.isIntersecting)x.target.querySelectorAll('.supply-fill[data-target]').forEach(b=>{setTimeout(()=>b.style.width=b.dataset.target,300)});}),{threshold:0.2});
@@ -3855,7 +4312,13 @@ async function installPWA(){if(!pwaPrompt)return;pwaPrompt.prompt();const result
 loadPosts();
 window.ethereum?.on('accountsChanged',()=>location.reload());
 window.ethereum?.on('chainChanged',()=>location.reload());
-async function tryAutoConnect(){if(!window.ethereum)return;try{const accounts=await window.ethereum.request({method:'eth_accounts'});if(accounts&&accounts.length>0){provider=new ethers.BrowserProvider(window.ethereum);signer=await provider.getSigner();userAddr=(await signer.getAddress()).toLowerCase();const btn=document.getElementById('connectBtn');btn.classList.add('connected');btn.innerHTML='<div class="w-dot"></div>'+userAddr.slice(0,6)+'...'+userAddr.slice(-4);document.getElementById('newPostBtn').classList.add('show');document.getElementById('composer').classList.add('show');await ensureUser();loadGateBal();loadPosts();updateNotifBadge();loadRewardsPool();}}catch(e){}}
+async function tryAutoConnect(){if(!window.ethereum)return;try{const accounts=await window.ethereum.request({method:'eth_accounts'});if(accounts&&accounts.length>0){provider=new ethers.BrowserProvider(window.ethereum);signer=await provider.getSigner();userAddr=(await signer.getAddress()).toLowerCase();const btn=document.getElementById('connectBtn');btn.classList.add('connected');btn.innerHTML='<div class="w-dot"></div>'+userAddr.slice(0,6)+'...'+userAddr.slice(-4);document.getElementById('newPostBtn').classList.add('show');document.getElementById('composer').classList.add('show');await ensureUser();loadGateBal();loadPosts();updateNotifBadge();loadRewardsPool();
+    setTimeout(function(){
+      subscribeToConversations();
+      updateUnreadBadge();
+      try{sb.channel('notifs-auto-'+userAddr).on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'to_wallet=eq.'+userAddr},function(){updateNotifBadge();}).subscribe();}catch(e){}
+    },800);
+  }}catch(e){}}
 tryAutoConnect();
 </script>
 <script>
