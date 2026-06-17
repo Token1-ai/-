@@ -3837,31 +3837,12 @@ async function buyNFT(listingId,price){
     // Re-fetch exact price from contract to avoid precision issues
     const p=getReadProvider();
     const marketRead=new ethers.Contract(NFT_MARKET,NFT_MARKET_ABI,p);
-    const listings=await marketRead.getListings(listingId,listingId);
-    if(!listings||!listings[0]){
-      showToast('Listing not found','err');return;
-    }
-    // Extract from ethers Proxy properly
-    const rawListing=listings[0];
-    // Try all ways to read active status from ethers Result object
-    let isActive=false;
-    try{ isActive=Boolean(rawListing.active); }catch{}
-    if(!isActive){ try{ isActive=rawListing[4]===true||Boolean(rawListing[4]); }catch{} }
-    // If both fail, assume active (listing was found)
-    if(!isActive&&rawListing){ isActive=true; }
-    if(!isActive){
-      showToast('Listing no longer active','err');return;
-    }
-    // Get price - try named field first, then positional
-    let exactPrice;
-    try{ exactPrice=rawListing.price; }catch{}
-    if(!exactPrice){ try{ exactPrice=rawListing[3]; }catch{} }
-    if(!exactPrice){ exactPrice=price; } // fallback to passed price
+    // Skip re-fetching from contract - use price passed directly from listing card
+    // Price is already a BigInt captured at render time
     showToast('Confirm in MetaMask...','ok');
     const market=new ethers.Contract(NFT_MARKET,NFT_MARKET_ABI,freshSigner);
-    // Add 1% buffer in case of price precision issues
-    const priceWithBuffer=typeof exactPrice==='bigint'?exactPrice*101n/100n:BigInt(Math.ceil(Number(exactPrice)*1.01));
-    const tx=await market.buyNFT(listingId,{value:priceWithBuffer});
+    // Use price directly - it's the BigInt from contract at load time
+    const tx=await market.buyNFT(listingId,{value:price});
     await tx.wait();
     showToast('NFT purchased! 🎉','ok');
     loadMarketplace();
@@ -3876,14 +3857,22 @@ async function cancelNFTListing(id){
     await switchToLitVM();
     const freshSigner=await provider.getSigner();
     const market=new ethers.Contract(NFT_MARKET,NFT_MARKET_ABI,freshSigner);
-    showToast('Cancelling listing...','ok');
+    showToast('Cancelling listing #'+id+'...','ok');
     const tx=await market.cancelListing(id);
     await tx.wait();
     showToast('Listing cancelled ✓','ok');
     loadMarketplace();
   }catch(e){
     const msg=e.reason||e.message||'Failed';
-    showToast(msg.slice(0,60),'err');
+    // More helpful error message
+    if(msg.includes('Not seller')||msg.includes('not owner')||msg.includes('not the seller')){
+      showToast('You are not the seller of this NFT','err');
+    } else if(msg.includes('not active')||msg.includes('inactive')){
+      showToast('Listing already cancelled','err');
+      loadMarketplace();
+    } else {
+      showToast(msg.slice(0,60),'err');
+    }
   }
 }
 
