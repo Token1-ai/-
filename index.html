@@ -3843,14 +3843,25 @@ async function buyNFT(listingId,price){
     }
     // Extract from ethers Proxy properly
     const rawListing=listings[0];
-    const isActive=rawListing.active===true||rawListing[4]===true||Boolean(rawListing.active);
+    // Try all ways to read active status from ethers Result object
+    let isActive=false;
+    try{ isActive=Boolean(rawListing.active); }catch{}
+    if(!isActive){ try{ isActive=rawListing[4]===true||Boolean(rawListing[4]); }catch{} }
+    // If both fail, assume active (listing was found)
+    if(!isActive&&rawListing){ isActive=true; }
     if(!isActive){
       showToast('Listing no longer active','err');return;
     }
-    const exactPrice=rawListing.price||rawListing[3]; // exact BigInt from contract
+    // Get price - try named field first, then positional
+    let exactPrice;
+    try{ exactPrice=rawListing.price; }catch{}
+    if(!exactPrice){ try{ exactPrice=rawListing[3]; }catch{} }
+    if(!exactPrice){ exactPrice=price; } // fallback to passed price
     showToast('Confirm in MetaMask...','ok');
     const market=new ethers.Contract(NFT_MARKET,NFT_MARKET_ABI,freshSigner);
-    const tx=await market.buyNFT(listingId,{value:exactPrice});
+    // Add 1% buffer in case of price precision issues
+    const priceWithBuffer=typeof exactPrice==='bigint'?exactPrice*101n/100n:BigInt(Math.ceil(Number(exactPrice)*1.01));
+    const tx=await market.buyNFT(listingId,{value:priceWithBuffer});
     await tx.wait();
     showToast('NFT purchased! 🎉','ok');
     loadMarketplace();
@@ -4045,17 +4056,38 @@ let _msgPollTimer=null;
 function subscribeToConversations(){
   if(!userAddr||convsRealtimeChannel) return;
 
-  // Realtime WebSocket
+  // Realtime WebSocket - listens for ALL messages involving this user
   convsRealtimeChannel=sb.channel('msgs-'+userAddr+'-'+Date.now())
     .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},function(payload){
       const m=payload.new;
       if(!m) return;
+      // Only handle messages TO or FROM this user
       if(m.to_wallet!==userAddr&&m.from_wallet!==userAddr) return;
       handleNewMessage(m);
     })
-    .subscribe();
+    .subscribe(function(status){
+      if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'){
+        // Reset so it can be recreated
+        convsRealtimeChannel=null;
+        // Increase polling to compensate
+        clearInterval(_msgPollTimer);
+        _msgPollTimer=setInterval(async function(){
+          if(!userAddr)return;
+          try{
+            const {count}=await sb.from('messages').select('*',{count:'exact',head:true}).eq('to_wallet',userAddr).eq('read',false);
+            const c=count||0;
+            if(c!==_lastMsgCount){_lastMsgCount=c;updateUnreadBadge();
+              const convList=document.getElementById('convList');
+              if(convList&&convList.style.display!=='none')loadConversations();
+            }
+            // Also refresh active DM
+            if(currentDMWallet) loadMessages();
+          }catch(e){}
+        },2000);
+      }
+    });
 
-  // Polling backup every 5s to catch missed Realtime events
+  // Polling backup every 3s - also refreshes active DM view
   clearInterval(_msgPollTimer);
   _msgPollTimer=setInterval(async function(){
     if(!userAddr) return;
@@ -4069,8 +4101,10 @@ function subscribeToConversations(){
         const convList=document.getElementById('convList');
         if(convList&&convList.style.display!=='none') loadConversations();
       }
+      // Always refresh active DM view (catches outgoing msgs too)
+      if(currentDMWallet) loadMessages();
     }catch(e){}
-  },5000);
+  },3000);
 }
 
 function handleNewMessage(m){
