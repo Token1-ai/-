@@ -3729,20 +3729,22 @@ async function loadMarketplace(){
     document.getElementById('mktVolume').textContent=parseFloat(ethers.formatEther(volume)).toFixed(4)+' zkLTC';
     const countNum=Number(count);
     if(!countNum||countNum===0){document.getElementById('mktListings').textContent='0';document.getElementById('marketListings').innerHTML='<div class="app-empty">No listings yet</div>';return;}
+    // getListings(startId, endId): listing[i] has contract ID = 1+i (1-based)
     const listings=await market.getListings(1,Math.min(countNum,50));
     const active=[];
     if(listings&&listings.length){
       for(let i=0;i<listings.length;i++){
-        const l=listings[i];
-        if(l&&l.active===true){
-          active.push({
-            seller:l.seller,
-            nftContract:l.nftContract,
-            tokenId:l.tokenId,
-            price:l.price,
-            active:true,
-            _id:i+1
-          });
+        const raw=listings[i];
+        const contractId=i+1; // real contract listing ID (1-based)
+        // ethers v6 Result is a Proxy - extract all fields by index to avoid Proxy issues
+        const seller   = raw[0]??raw.seller;
+        const nftAddr  = raw[1]??raw.nftContract;
+        const tokenId  = raw[2]??raw.tokenId;
+        const price    = raw[3]??raw.price;
+        const isActive = raw[4]??raw.active;
+        // isActive can be bool true/false in ethers v6
+        if(isActive===true){
+          active.push({seller,nftContract:nftAddr,tokenId,price,active:true,_id:contractId});
         }
       }
     }
@@ -3834,21 +3836,21 @@ async function buyNFT(listingId,price){
   try{
     await switchToLitVM();
     const freshSigner=await provider.getSigner();
-    // Re-fetch exact price from contract to avoid precision issues
-    const p=getReadProvider();
-    const marketRead=new ethers.Contract(NFT_MARKET,NFT_MARKET_ABI,p);
-    // Skip re-fetching from contract - use price passed directly from listing card
-    // Price is already a BigInt captured at render time
     showToast('Confirm in MetaMask...','ok');
     const market=new ethers.Contract(NFT_MARKET,NFT_MARKET_ABI,freshSigner);
-    // Use price directly - it's the BigInt from contract at load time
+    // price is BigInt captured at render time from raw[3] (positional extraction)
     const tx=await market.buyNFT(listingId,{value:price});
     await tx.wait();
     showToast('NFT purchased! 🎉','ok');
     loadMarketplace();
   }catch(e){
     const msg=e.reason||e.message||'Failed';
-    showToast(msg.slice(0,60),'err');
+    if(msg.includes('not active')||msg.includes('inactive')||msg.includes('Listing')){
+      showToast('Listing no longer available','err');
+      loadMarketplace(); // refresh to show current state
+    } else {
+      showToast(msg.slice(0,60),'err');
+    }
   }
 }
 async function cancelNFTListing(id){
