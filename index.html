@@ -2029,7 +2029,8 @@ function renderPost(post,liked){
   const repostHeader=post.repost_by?`<div style="font-size:11px;color:var(--muted);padding:8px 20px 0;display:flex;align-items:center;gap:5px;"><span>🔁</span><span style="font-weight:600;color:var(--muted);">${esc(post.repost_by_name||sAddr(post.repost_by))} reposted</span></div>`:'';
   return `${repostHeader}<div class="post-card"><div class="post-inner"><div class="post-av" onclick="showTab('profile');loadProfile('${post.author_wallet}')" style="cursor:pointer;">${av}</div><div class="post-body"><div class="post-hdr"><span class="post-name" onclick="showTab('profile');loadProfile('${post.author_wallet}')" style="cursor:pointer;">${esc(name)}</span>${badge}<span class="post-wlt" onclick="showTab('profile');loadProfile('${post.author_wallet}')" style="cursor:pointer;">${sAddr(post.author_wallet)}</span><span class="post-time">${tAgo(post.created_at)}</span>${post.author_wallet!==userAddr?`<button onclick="quickFollow('${post.author_wallet}',this)" class="quick-follow-btn" style="margin-left:auto;font-size:11px;padding:2px 8px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--muted);cursor:pointer;">+ Follow</button>`:''}</div><div class="post-txt">${esc(post.content)}</div>${renderImages(post.image_urls)}<div class="post-acts"><button class="act-btn${liked?' liked':''}" onclick="likePost('${post.id}','${post.author_wallet}',this)"><span>${liked?'❤️':'🤍'}</span><span class="act-cnt" id="cnt-${post.id}">${post.likes_count||0}</span></button><button class="act-btn" onclick="repostPost('${post.id}','${post.author_wallet}',this)" id="rp-${post.id}"><span>🔁</span><span class="act-cnt" id="rpcnt-${post.id}">${post.reposts_count||0}</span></button>
           <button class="act-btn" onclick="cpText(location.href+'?p=${post.id}');showToast('Link copied!','ok')"><span>🔗</span></button>
-          ${post.author_wallet!==userAddr?`<button class="act-btn" onclick="openChallenge('${post.author_wallet}','${esc((post.users?.username||sAddr(post.author_wallet)))}')" title="Challenge to Battleship" style="font-size:11px;"><span>⚔️</span></button>`:''}</div></div></div></div>`;
+          ${post.author_wallet!==userAddr?`<button class="act-btn" onclick="openChallenge('${post.author_wallet}','${esc((post.users?.username||sAddr(post.author_wallet)))}')" title="Challenge to Battleship" style="font-size:11px;"><span>⚔️</span></button>`:''}
+          ${post.author_wallet===userAddr?`<button class="act-btn" onclick="deletePost('${post.id}',this)" title="Delete post" style="color:var(--red);font-size:11px;"><span>🗑️</span></button>`:''}</div></div></div></div>`;
 }
 async function loadMorePosts(before){
   const list=document.getElementById('postsList');
@@ -2079,10 +2080,14 @@ async function likePost(postId,authorWallet,btn){
   const liked=btn.classList.contains('liked');
   if(liked){
     await sb.from('likes').delete().eq('post_id',postId).eq('liker_wallet',userAddr);
-    const c=Math.max(0,parseInt(document.getElementById('cnt-'+postId).textContent)-1);
+    // Get real count from DB
+    const {data:postData}=await sb.from('posts').select('likes_count').eq('id',postId).single();
+    const c=Math.max(0,(postData?.likes_count||1)-1);
     await sb.from('posts').update({likes_count:c}).eq('id',postId);
     btn.classList.remove('liked'); btn.querySelector('span').textContent='🤍';
-    document.getElementById('cnt-'+postId).textContent=c; return;
+    const cntEl2=document.getElementById('cnt-'+postId);
+    if(cntEl2) cntEl2.textContent=c;
+    return;
   }
   btn.disabled=true;
   try{
@@ -2099,16 +2104,15 @@ async function likePost(postId,authorWallet,btn){
     await tx.wait();
     await sb.from('likes').insert({post_id:postId,liker_wallet:userAddr,tx_hash:tx.hash});
     await createNotif(authorWallet,'like',postId);
-    // Update likes count
-    const cntEl=document.getElementById('cnt-'+postId);
-    const prevCount=parseInt((cntEl&&cntEl.textContent)||'0')||0;
-    const c=prevCount+1;
     // Update UI immediately
     btn.classList.add('liked');
     btn.querySelector('span').textContent='❤️';
-    if(cntEl) cntEl.textContent=c;
-    // Save to DB
+    // Get real count from DB and increment
+    const {data:postData}=await sb.from('posts').select('likes_count').eq('id',postId).single();
+    const c=(postData?.likes_count||0)+1;
     await sb.from('posts').update({likes_count:c}).eq('id',postId);
+    const cntEl=document.getElementById('cnt-'+postId);
+    if(cntEl) cntEl.textContent=c;
     showToast('❤️ Liked! 0.1 GATE sent to author','ok');
     loadGateBal(true);
   }catch(e){showToast((e.reason||e.message||'Failed').slice(0,50),'err');}
@@ -4212,6 +4216,25 @@ function toggleBell(wallet,btnEl){const list=getBellList();const idx=list.indexO
 function removeBellNotif(wallet){const list=getBellList();const idx=list.indexOf(wallet);if(idx>=0){list.splice(idx,1);saveBellList(list);}}
 function isBellOn(wallet){return getBellList().includes(wallet);}
 async function checkBellFollowers(authorWallet){try{const {data:followers}=await sb.from('follows').select('follower_wallet').eq('following_wallet',authorWallet);if(!followers)return;for(const f of followers){await createNotif(f.follower_wallet,'like',null);}}catch(e){}}
+
+// ── DELETE POST ──
+async function deletePost(postId,btn){
+  if(!userAddr){showToast('Connect wallet first','err');return;}
+  if(!confirm('Delete this post?')) return;
+  try{
+    btn.disabled=true;
+    // Delete likes first
+    await sb.from('likes').delete().eq('post_id',postId);
+    // Delete post
+    const {error}=await sb.from('posts').delete().eq('id',postId).eq('author_wallet',userAddr);
+    if(error) throw error;
+    showToast('Post deleted ✓','ok');
+    loadPosts();
+  }catch(e){
+    showToast('Failed to delete','err');
+    btn.disabled=false;
+  }
+}
 
 // ── REPOST ──
 async function repostPost(postId,authorWallet,btn){if(!userAddr){showToast('Connect wallet first','err');return;}if(userAddr===authorWallet.toLowerCase()){showToast("Cannot repost own post",'err');return;}try{const {data:existing}=await sb.from('posts').select('id').eq('repost_of',postId).eq('author_wallet',userAddr).single();if(existing){showToast('Already reposted','err');return;}const {data:origPost}=await sb.from('posts').select('*').eq('id',postId).single();if(!origPost)return;await sb.from('posts').insert({author_wallet:userAddr,content:origPost.content,image_urls:origPost.image_urls||[],repost_of:postId,repost_by:userAddr,repost_by_name:currentUser?.username||sAddr(userAddr),likes_count:0,reposts_count:0});const newCount=(parseInt(document.getElementById('rpcnt-'+postId)?.textContent||'0'))+1;await sb.from('posts').update({reposts_count:newCount}).eq('id',postId);if(document.getElementById('rpcnt-'+postId))document.getElementById('rpcnt-'+postId).textContent=newCount;btn.style.color='var(--green)';showToast('🔁 Reposted!','ok');await createNotif(authorWallet,'repost',postId);loadPosts();}catch(e){showToast('Failed','err');}}
