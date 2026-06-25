@@ -2,7 +2,7 @@
   "name": "OpenGate",
   "short_name": "OpenGate",
   "description": "Post. Earn. Own. Web3 social platform on LitVM + BNB Chain.",
-  "start_url": "/",
+  "start_url": "/index1.html",
   "display": "standalone",
   "background_color": "#08090C",
   "theme_color": "#F5C842",
