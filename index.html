@@ -4,7 +4,7 @@
 <meta charset="UTF-8"/>
 <link rel="icon" type="image/png" href="https://gateway.pinata.cloud/ipfs/bafkreiamkxg35myscurq5unztoh6vzp5kgkrkzxxctggdxfeqnqhbvsnyy"/>
 <link rel="apple-touch-icon" href="https://gateway.pinata.cloud/ipfs/bafkreiamkxg35myscurq5unztoh6vzp5kgkrkzxxctggdxfeqnqhbvsnyy"/>
-<link rel="manifest" href="/manifest.json"/>
+<link rel="manifest" href="./manifest.json"/>
 <meta name="theme-color" content="#F5C842"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -696,7 +696,6 @@ textarea.form-inp{resize:vertical;min-height:80px;}
         <div class="side-lbl">Menu</div>
         <button class="side-btn active" id="tab-feed" onclick="showTab('feed')"><span class="side-ico">🏠</span>Home Feed</button>
         <button class="side-btn" id="tab-profile" onclick="showTab('profile')"><span class="side-ico">👤</span>My Profile</button>
-        <button class="side-btn" onclick="window.open('https://www.easyswap.life','_blank')"><span class="side-ico">🔄</span>Easy Swap</button>
         <button class="side-btn" onclick="window.open('https://www.easyswap.life','_blank')"><span class="side-ico">🟡</span>Buy GATE</button>
         <button class="side-btn" id="tab-staking" onclick="showTab('staking')"><span class="side-ico">💎</span>Staking</button>
 
@@ -712,6 +711,7 @@ textarea.form-inp{resize:vertical;min-height:80px;}
         <button class="side-btn" id="tab-launchpad" onclick="showTab('launchpad')"><span class="side-ico">🪙</span>Launchpad</button>
         <button class="side-btn" id="tab-presale" onclick="showTab('presale')"><span class="side-ico">🚀</span>Presale</button>
         <button class="side-btn" id="tab-messages" onclick="showTab('messages')"><span class="side-ico">💬</span>Messages<span id="unreadBadge" style="display:none;background:var(--red);color:#fff;font-size:10px;padding:1px 6px;border-radius:100px;margin-left:6px;"></span></button>
+        <button class="side-btn" id="modTabBtn" onclick="showTab('moderation')" style="display:none;"><span class="side-ico">🛡️</span>Moderation<span id="reportsBadge" style="display:none;background:var(--red);color:#fff;font-size:10px;padding:1px 6px;border-radius:100px;margin-left:6px;"></span></button>
       </div>
       <div class="side-sec">
         <div class="side-lbl">Info</div>
@@ -1115,7 +1115,7 @@ textarea.form-inp{resize:vertical;min-height:80px;}
             <div style="font-size:13px;font-weight:700;margin-bottom:12px;">How it works</div>
             <div class="w-row"><span class="w-lbl">Ticket price</span><span class="w-val" style="color:var(--gold);">10 GATE</span></div>
             <div class="w-row"><span class="w-lbl">Max players</span><span class="w-val">20</span></div>
-            <div class="w-row"><span class="w-lbl">Prize</span><span class="w-val" style="color:var(--green);">95% of pot</span></div>
+            <div class="w-row"><span class="w-lbl">Prize</span><span class="w-val" style="color:var(--green);">97% of pot</span></div>
             <div class="w-row"><span class="w-lbl">Platform fee</span><span class="w-val">5%</span></div>
             <div class="w-row"><span class="w-lbl">Draw</span><span class="w-val">Auto when full</span></div>
           </div>
@@ -1429,6 +1429,10 @@ textarea.form-inp{resize:vertical;min-height:80px;}
           </div>
         </div>
       </div>
+      <div id="view-moderation" style="display:none;">
+        <div class="feed-hdr" style="display:flex;align-items:center;justify-content:space-between;"><span>🛡️ Moderation</span><button onclick="loadModerationPanel()" style="background:var(--bg3);border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:5px 12px;font-size:12px;cursor:pointer;">↻ Refresh</button></div>
+        <div id="modPanelContent" style="padding:16px 20px;"><div class="app-loader">Loading...</div></div>
+      </div>
       <div id="view-staking" style="display:none;">
         <div class="feed-hdr">💎 GATE Staking</div>
         <div style="padding:20px;max-width:560px;margin:0 auto;">
@@ -1531,7 +1535,7 @@ const TOKEN_FACTORY   = '0x07b49A05C2a2cf2B11cA5796Fcad250E9Bc2D38f';
 const NFT_MARKET      = '0xF80a8ea1324679C95E81BDf056FC29ad7E8A7Cb0';
 const GATE_REWARDS    = '0xc4da965B91F13D89fEd37fd75452cc596f663F3a';
 const GATE_DAO        = '0x0A71755Eb9A72669A627534e17FFafDBfbF49298';
-const GATE_LOTTERY    = '0xfc5AFcF1dEa493d61E981B1D08519dd1a7d78035';
+const GATE_LOTTERY    = '0xa11cea6D522335F19D2eAD76a54C4345A0E9c48F';
 const GATE_DICE         = '0x5c2279eC7f2A0b717f2EDff068cD2bC65C79D855';
 const BATTLESHIP_ADDR   = '0x9058806b8DAe29d2851C56eB7BE786a7eAa5FE13';
 const GATE_LENDING      = '0x05007cA22f2e86Ffe8eF2fE3B19b323A5B4B01F6';
@@ -1979,20 +1983,7 @@ async function createPost(){
   if(!userAddr){showToast('Connect wallet first','err');return;}
   const content=document.getElementById('postText').value.trim();
   if(!content) return;
-  // Check daily post limit (owner has unlimited)
-  const OWNER_WALLET='0x0c31cf365d39dae89df36851363826eef2319d98';
-  const isOwner=userAddr===OWNER_WALLET;
-  const passType=currentUser?.pass_type;
-  const maxPosts=isOwner?999999:passType==='gold'?999:passType==='silver'?10:3;
-  if(!isOwner){
-    const today=new Date();today.setHours(0,0,0,0);
-    const {count:todayPosts}=await sb.from('posts').select('*',{count:'exact',head:true})
-      .eq('author_wallet',userAddr).gte('created_at',today.toISOString());
-    if(todayPosts>=maxPosts){
-      if(passType==='silver') showToast('Silver limit: 10 posts/day. Upgrade to Gold for unlimited!','err');
-      else showToast('Free limit: 3 posts/day. Get Silver or Gold Pass for more!','err');
-      return;
-    }
+  // Unlimited posts for all
   }
   const btn=document.getElementById('postBtn');
   btn.disabled=true; btn.textContent='Posting...';
@@ -2079,7 +2070,7 @@ function renderPost(post,liked){
   return `<div class="post-card"><div class="post-inner"><div class="post-av" onclick="showTab('profile');loadProfile('${post.author_wallet}')" style="cursor:pointer;">${av}</div><div class="post-body"><div class="post-hdr"><span class="post-name" onclick="showTab('profile');loadProfile('${post.author_wallet}')" style="cursor:pointer;">${esc(name)}</span>${badge}<span class="post-wlt" onclick="showTab('profile');loadProfile('${post.author_wallet}')" style="cursor:pointer;">${sAddr(post.author_wallet)}</span><span class="post-time">${tAgo(post.created_at)}</span>${post.author_wallet!==userAddr?`<button onclick="quickFollow('${post.author_wallet}',this)" class="quick-follow-btn" style="margin-left:auto;font-size:11px;padding:2px 8px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--muted);cursor:pointer;">+ Follow</button>`:''}</div><div class="post-txt">${esc(post.content)}</div>${renderImages(post.image_urls)}<div class="post-acts"><button class="act-btn${liked?' liked':''}" onclick="likePost('${post.id}','${post.author_wallet}',this)"><span>${liked?'❤️':'🤍'}</span><span class="act-cnt" id="cnt-${post.id}">${post._realLikes!==undefined?post._realLikes:(post.likes_count||0)}</span></button>
           <button class="act-btn" onclick="cpText(location.href+'?p=${post.id}');showToast('Link copied!','ok')"><span>🔗</span></button>
           ${post.author_wallet!==userAddr?`<button class="act-btn" onclick="openChallenge('${post.author_wallet}','${esc((post.users?.username||sAddr(post.author_wallet)))}')\" title="Challenge to Battleship" style="font-size:11px;"><span>⚔️</span></button>`:''}
-          ${post.author_wallet===userAddr?`<button class="act-btn" onclick="deletePost('${post.id}',this)" title="Delete post" style="color:var(--red);font-size:11px;"><span>🗑️</span></button>`:''}
+          ${(post.author_wallet===userAddr||userAddr==='0x0c31cf365d39dae89df36851363826eef2319d98')?`<button class="act-btn" onclick="deletePost('${post.id}',this)" title="Delete post" style="color:var(--red);font-size:11px;"><span>🗑️</span></button>`:''}${post.author_wallet!==userAddr?`<button class="act-btn" onclick="reportPost('${post.id}','${post.author_wallet}',this)" title="Report" style="color:var(--muted);font-size:11px;"><span>🚩</span></button>`:''}
           <button class="act-btn" onclick="toggleComments('${post.id}',this)" id="cmtbtn-${post.id}"><span>💬</span><span class="act-cnt" id="cmtcnt-${post.id}">0</span></button>
           </div>
           <div id="comments-${post.id}" style="display:none;margin-top:10px;border-top:1px solid var(--border);padding-top:10px;"></div>
@@ -4421,6 +4412,62 @@ function removeBellNotif(wallet){const list=getBellList();const idx=list.indexOf
 function isBellOn(wallet){return getBellList().includes(wallet);}
 async function checkBellFollowers(authorWallet){try{const {data:followers}=await sb.from('follows').select('follower_wallet').eq('following_wallet',authorWallet);if(!followers)return;for(const f of followers){await createNotif(f.follower_wallet,'like',null);}}catch(e){}}
 
+
+// ── REPORT & MODERATION ──
+const OWNER_WALLET_MOD='0x0c31cf365d39dae89df36851363826eef2319d98';
+
+async function reportPost(postId,authorWallet,btn){
+  if(!userAddr){showToast('Connect wallet first','err');return;}
+  if(btn.dataset.reported){showToast('Already reported','err');return;}
+  try{
+    await sb.from('reports').insert({post_id:postId,reporter_wallet:userAddr,author_wallet:authorWallet,reason:'inappropriate'});
+  }catch(e){}
+  btn.style.color='var(--red)';btn.dataset.reported='1';
+  showToast('🚩 Reported!','ok');
+}
+
+async function loadReportsBadge(){
+  if(!userAddr||userAddr!==OWNER_WALLET_MOD)return;
+  try{
+    const {count}=await sb.from('reports').select('*',{count:'exact',head:true}).eq('reviewed',false);
+    const badge=document.getElementById('reportsBadge');
+    if(badge){if(count>0){badge.style.display='inline';badge.textContent=count;}else badge.style.display='none';}
+  }catch(e){}
+}
+
+async function loadModerationPanel(){
+  if(!userAddr||userAddr!==OWNER_WALLET_MOD){showToast('Access denied','err');return;}
+  const el=document.getElementById('modPanelContent');if(!el)return;
+  el.innerHTML='<div class="app-loader">Loading reports...</div>';
+  try{
+    const {data:reports}=await sb.from('reports').select('*').eq('reviewed',false).order('created_at',{ascending:false}).limit(50);
+    if(!reports||!reports.length){el.innerHTML='<div class="app-empty"><div class="app-empty-ico">✅</div>No pending reports!</div>';return;}
+    const grouped={};
+    reports.forEach(function(r){if(!grouped[r.post_id])grouped[r.post_id]={count:0,ids:[],author:r.author_wallet};grouped[r.post_id].count++;grouped[r.post_id].ids.push(r.id);});
+    const postIds=Object.keys(grouped);
+    const {data:posts}=await sb.from('posts').select('*').in('id',postIds);
+    const pm={};if(posts)posts.forEach(function(p){pm[p.id]=p;});
+    el.innerHTML='';
+    Object.values(grouped).forEach(function(g){
+      const post=pm[g.post_id];
+      const card=document.createElement('div');
+      card.style.cssText='background:var(--bg2);border:1px solid rgba(255,77,77,0.3);border-radius:var(--r);padding:16px;margin-bottom:12px;';
+      const imgs=post&&post.image_urls&&post.image_urls.length?post.image_urls.map(function(u){return'<img src="'+u+'" style="width:80px;height:80px;object-fit:cover;border-radius:8px;margin-right:6px;"/>';}).join(''):'';
+      card.innerHTML='<div style="display:flex;justify-content:space-between;margin-bottom:10px;"><div style="font-size:13px;font-weight:700;color:var(--red);">🚩 '+g.count+' report(s)</div><div style="font-size:11px;color:var(--muted);">'+sAddr(g.author)+'</div></div>'+(post?'<div style="font-size:14px;margin-bottom:8px;">'+esc(post.content)+'</div>':'<div style="font-size:14px;margin-bottom:8px;color:var(--muted);">Post deleted</div>')+(imgs?'<div style="margin-bottom:10px;">'+imgs+'</div>':'')+'<div style="display:flex;gap:8px;"><button onclick="moderatePost(''+g.post_id+'','delete','+JSON.stringify(g.ids)+')" style="flex:1;padding:8px;border-radius:8px;background:var(--red);color:#fff;font-size:13px;font-weight:700;cursor:pointer;border:none;">🗑️ Delete</button><button onclick="moderatePost(''+g.post_id+'','dismiss','+JSON.stringify(g.ids)+')" style="flex:1;padding:8px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);color:var(--muted);font-size:13px;cursor:pointer;border:none;">✓ Dismiss</button></div>';
+      el.appendChild(card);
+    });
+  }catch(e){el.innerHTML='<div class="app-empty">Failed to load</div>';}
+}
+
+async function moderatePost(postId,action,reportIds){
+  try{
+    if(action==='delete')await sb.from('posts').delete().eq('id',postId);
+    if(reportIds&&reportIds.length)await sb.from('reports').update({reviewed:true}).in('id',reportIds);
+    showToast(action==='delete'?'Post deleted ✓':'Dismissed ✓','ok');
+    loadModerationPanel();if(action==='delete')loadPosts();
+  }catch(e){showToast('Failed','err');}
+}
+
 // ── DELETE POST ──
 async function deletePost(postId,btn){
   if(!userAddr){showToast('Connect wallet first','err');return;}
@@ -4430,7 +4477,9 @@ async function deletePost(postId,btn){
     // Delete likes first
     await sb.from('likes').delete().eq('post_id',postId);
     // Delete post
-    const {error}=await sb.from('posts').delete().eq('id',postId).eq('author_wallet',userAddr);
+    const _OW='0x0c31cf365d39dae89df36851363826eef2319d98';
+    const _dq=userAddr===_OW?sb.from('posts').delete().eq('id',postId):sb.from('posts').delete().eq('id',postId).eq('author_wallet',userAddr);
+    const {error}=await _dq;
     if(error) throw error;
     showToast('Post deleted ✓','ok');
     loadPosts();
