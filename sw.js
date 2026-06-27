@@ -1,66 +1,78 @@
-const CACHE = 'opengate-v1.1';
-// ВАЖЛИВО: Якщо ваш файл називається index1.html, вкажіть його тут замість /index.html
+const CACHE_NAME = 'opengate-v4';
+
+// Cache only local static files — served instantly from cache
 const ASSETS = [
   '/',
-  '/index1.html', 
-  '/manifest.json'
+  '/index.html',
+  '/manifest.json',
+  '/icon-192.png',
+  '/icon-512.png'
 ];
 
-// Інсталяція: кешуємо лише базові локальні файли
+// Domains to NEVER cache — always fetch fresh from network
+const BYPASS_HOSTS = [
+  'supabase.co',
+  'pinata.cloud',
+  'ipfs.io',
+  'cloudflare-ipfs.com',
+  'dweb.link',
+  'cloudinary.com',
+  'liteforge.rpc.caldera.xyz',
+  'bsc-dataseed.binance.org',
+  'bscscan.com',
+  'googleapis.com',
+  'cdnjs.cloudflare.com',
+  'jsdelivr.net'
+];
+
 self.addEventListener('install', e => {
   e.waitUntil(
-    caches.open(CACHE)
-      .then(c => {
-        console.log('Кешування базових ресурсів OpenGate...');
-        return c.addAll(ASSETS);
-      })
-      .then(() => self.skipWaiting())
-      .catch(err => console.error('Помилка кешування при інсталяції:', err))
+    caches.open(CACHE_NAME).then(cache => {
+      return cache.addAll(ASSETS);
+    })
   );
+  self.skipWaiting();
 });
 
-// Активація: видаляємо старі версії кешу
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys =>
       Promise.all(
-        keys.filter(k => k !== CACHE).map(k => caches.delete(k))
+        keys.map(key => {
+          if (key !== CACHE_NAME) {
+            return caches.delete(key);
+          }
+        })
       )
-    ).then(() => self.clients.claim())
+    )
   );
+  self.clients.claim();
 });
 
-// Перехоплення запитів: "Network First, Falling Back to Cache" 
-// (Найкраща стратегія для Web3 соцмереж, де контент постійно оновлюється)
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
 
-  // Не кешуємо запити до API Supabase або блокчейн-нод (RPC), щоб не багувалися дані
-  if (e.request.url.includes('supabase.co') || e.request.url.includes('rpc') || e.request.url.includes('eth_')) {
-    return;
-  }
+  const url = new URL(e.request.url);
 
+  // Skip external API/RPC/blockchain — always fresh data
+  const shouldBypass = BYPASS_HOSTS.some(host => url.host.includes(host));
+  if (shouldBypass) return;
+
+  if (!url.protocol.startsWith('http')) return;
+
+  // Stale-While-Revalidate for local files
   e.respondWith(
-    fetch(e.request)
-      .then(res => {
-        // Якщо відповідь успішна (і це не opaque/сторонній збійний запит), копіюємо в кеш
-        if (res.status === 200) {
-          const clone = res.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone));
-        }
-        return res;
-      })
-      .catch(() => {
-        // Якщо немає інтернету — віддаємо файл з кешу
-        return caches.match(e.request).then(cachedResponse => {
-          if (cachedResponse) {
-            return cachedResponse;
+    caches.open(CACHE_NAME).then(cache => {
+      return cache.match(e.request).then(cachedResponse => {
+        const networkFetch = fetch(e.request).then(networkResponse => {
+          if (networkResponse && networkResponse.status === 200) {
+            cache.put(e.request, networkResponse.clone());
           }
-          // Якщо в кеші теж немає (наприклад, для нової сторінки)
-          if (e.request.mode === 'navigate') {
-            return caches.match('/index1.html');
-          }
-        });
-      })
+          return networkResponse;
+        }).catch(() => null);
+
+        return cachedResponse || networkFetch;
+      });
+    })
   );
 });
