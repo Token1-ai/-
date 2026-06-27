@@ -299,6 +299,7 @@ footer{padding:48px 24px 32px;border-top:1px solid var(--border);display:flex;fl
 .act-btn{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--muted);background:none;border:none;cursor:pointer;transition:color .2s;padding:4px 0;}
 .act-btn:hover,.act-btn.liked{color:var(--gold);}
 .act-cnt{font-family:'Space Mono',monospace;font-size:12px;}
+@keyframes pulse{0%,100%{box-shadow:0 4px 16px rgba(245,200,66,0.4);}50%{box-shadow:0 4px 24px rgba(245,200,66,0.8);}}
 @keyframes pop{0%{transform:scale(1);}50%{transform:scale(1.4);}100%{transform:scale(1);}}
 .pop{animation:pop .2s ease;}
 
@@ -721,7 +722,7 @@ textarea.form-inp{resize:vertical;min-height:80px;}
       <div id="view-feed">
         <div class="feed-hdr" style="display:flex;align-items:center;justify-content:space-between;">
           <span>Home</span>
-          <button id="newPostsBtn" onclick="loadPosts()" style="display:none;background:var(--gold);color:#08090C;border-radius:20px;padding:4px 14px;font-size:12px;font-weight:700;border:none;cursor:pointer;">↻ New posts</button>
+          <button id="newPostsBtn" onclick="loadPosts()" style="display:none;background:rgba(245,200,66,0.92);backdrop-filter:blur(12px);color:#08090C;border-radius:20px;padding:8px 20px;font-size:13px;font-weight:700;border:none;cursor:pointer;box-shadow:0 4px 16px rgba(245,200,66,0.4);transition:all .2s;white-space:nowrap;">↻ New posts</button>
         </div>
         <div class="feed-tabs">
           <button class="feed-tab active" onclick="switchFeedTab('all',this)">All Posts</button>
@@ -2051,15 +2052,31 @@ async function createPost(){
   btn.disabled=false; btn.textContent='Post';
 }
 let postsRealtimeChannel=null;
+let _feedRefreshTimer=null;
+let _lastPostsCount=0;
 function subscribeToNewPosts(){
   if(postsRealtimeChannel) return;
-  postsRealtimeChannel=sb.channel('posts-feed')
+  postsRealtimeChannel=sb.channel('posts-feed-'+Date.now())
     .on('postgres_changes',{event:'INSERT',schema:'public',table:'posts'},function(){
-      // Show "new posts" button instead of auto-reloading
-      const btn=document.getElementById('newPostsBtn');
-      if(btn) btn.style.display='block';
+      showNewPostsBtn();
     })
     .subscribe();
+  // Fallback polling every 10s
+  clearInterval(_feedRefreshTimer);
+  _feedRefreshTimer=setInterval(async function(){
+    const feedView=document.getElementById('view-feed');
+    if(!feedView||feedView.style.display==='none') return;
+    try{
+      const {count}=await sb.from('posts').select('*',{count:'exact',head:true});
+      if(count&&count>_lastPostsCount&&_lastPostsCount>0){
+        showNewPostsBtn();
+      }
+    }catch(e){}
+  },10000);
+}
+function showNewPostsBtn(){
+  const btn=document.getElementById('newPostsBtn');
+  if(btn){btn.style.display='inline-block';btn.style.animation='pulse 1s ease-in-out infinite';}
 }
 
 async function loadPosts(){
@@ -2092,6 +2109,7 @@ async function loadPosts(){
     list.innerHTML=posts.map(p=>renderPost(p,ls.has(p.id))).join('');
     // Load comment counts asynchronously
     loadCommentCounts(posts.map(p=>p.id));
+    _lastPostsCount=posts.length;
     // Load more button
     if(posts.length===15){
       const more=document.createElement('div');
@@ -3553,8 +3571,13 @@ async function bsFireAt(idx){
       bsPhase='over';
       bsSetStatus('🎉 YOU WIN!');
       showToast('🎉 YOU WIN! Claiming prize...','ok');
-      // Auto-claim prize from contract
-      bsAutoClaimPrize(game);
+      // Fetch fresh game data to get contract_game_id
+      try{
+        const freshRes=await sb.from('battleship_games').select('*').eq('id',currentBsGame).single();
+        bsAutoClaimPrize(freshRes.data||game);
+      }catch(e){
+        bsAutoClaimPrize(game);
+      }
     } else if(hit){
       bsSetStatus('💥 HIT! Shoot again!');
       showToast('💥 Hit! Shoot again!','ok');
@@ -3670,31 +3693,37 @@ async function bsPollGame(){
 }
 
 async function bsAutoClaimPrize(game){
-  if(!game||game.bet_token==='FREE'||parseFloat(game.bet_amount||0)<=0) return;
+  if(!game||game.bet_token==='FREE'||parseFloat(game.bet_amount||0)<=0){
+    showToast('🎉 You won!','ok');
+    return;
+  }
   const contractGameId=game.contract_game_id||0;
   const prizeAmt=(parseFloat(game.bet_amount||0)*2*0.97).toFixed(2);
   if(!contractGameId||contractGameId===0){
-    showToast('🎉 You won! (Free game)','ok');
+    showToast('🎉 You won! '+prizeAmt+' '+game.bet_token+' (free game — no contract stake)','ok');
     return;
   }
   try{
     await switchToLitVM();
     const freshSigner=await provider.getSigner();
-    const coder=ethers.AbiCoder.defaultAbiCoder();
+    const iface=new ethers.Interface(['function declareWinner(uint256 gameId, address winner)']);
     showToast('🏆 Claiming '+prizeAmt+' '+game.bet_token+'... Confirm in wallet','ok');
-    const sel=ethers.id('declareWinner(uint256,address)').slice(0,10);
-    const data=sel+coder.encode(['uint256','address'],[BigInt(contractGameId),userAddr]).slice(2);
-    const tx=await freshSigner.sendTransaction({to:BATTLESHIP_ADDR,data,gasLimit:200000n});
+    const tx=await freshSigner.sendTransaction({
+      to:BATTLESHIP_ADDR,
+      data:iface.encodeFunctionData('declareWinner',[BigInt(contractGameId),userAddr]),
+      gasLimit:300000n
+    });
     showToast('⏳ Waiting for confirmation...','ok');
     await tx.wait();
     showToast('🏆 '+prizeAmt+' '+game.bet_token+' sent to your wallet!','ok');
     loadGateBal(true);
   }catch(e){
-    const msg=e.reason||e.message||'';
-    if(msg.includes('Not authorized')){
-      showToast('🎉 You won! Opponent must confirm the result.','ok');
+    const msg=e.reason||e.data?.message||e.message||'';
+    console.log('declareWinner error:',msg);
+    if(msg.includes('not in progress')||msg.includes('Not a player')){
+      showToast('🎉 You won! Could not auto-claim — check wallet or try manually','ok');
     } else {
-      showToast('🎉 Won! Prize: '+prizeAmt+' '+game.bet_token+' (check wallet)','ok');
+      showToast('🎉 Won! Prize: '+prizeAmt+' '+game.bet_token+' — confirm in wallet','ok');
     }
   }
 }
