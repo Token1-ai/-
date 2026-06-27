@@ -2,23 +2,23 @@
   "name": "OpenGate",
   "short_name": "OpenGate",
   "description": "Post. Earn. Own. Web3 social platform on LitVM + BNB Chain.",
-  "start_url": "/index1.html",
+  "start_url": "/",
   "display": "standalone",
   "background_color": "#08090C",
   "theme_color": "#F5C842",
   "orientation": "portrait",
   "icons": [
     {
-      "src": "https://gateway.pinata.cloud/ipfs/bafkreiamkxg35myscurq5unztoh6vzp5kgkrkzxxctggdxfeqnqhbvsnyy",
+      "src": "/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "https://gateway.pinata.cloud/ipfs/bafkreiamkxg35myscurq5unztoh6vzp5kgkrkzxxctggdxfeqnqhbvsnyy",
+      "src": "/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ],
   "categories": ["finance", "social"],
