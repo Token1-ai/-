@@ -23,7 +23,9 @@
 <meta name="twitter:title" content="OpenGate — Post. Earn. Own."/>
 <meta name="twitter:description" content="Web3 social platform. Earn GATE tokens from likes."/>
 <meta name="twitter:image" content="/icon-512.png"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<meta name="google" content="notranslate"/>
+<meta http-equiv="Content-Language" content="en"/>
 <title>OpenGate — Post. Earn. Own.</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -220,6 +222,14 @@ footer{padding:48px 24px 32px;border-top:1px solid var(--border);display:flex;fl
 #toast.ok{border-color:rgba(38,217,138,.3);color:var(--green);}
 #toast.err{border-color:rgba(255,77,77,.3);color:var(--red);}
 
+/* PULL TO REFRESH */
+#ptr-indicator{position:fixed;top:56px;left:50%;transform:translateX(-50%) translateY(-60px);z-index:200;background:var(--bg2);border:1px solid var(--border-g);border-radius:100px;padding:8px 18px;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--gold);box-shadow:0 4px 16px rgba(0,0,0,.4);transition:transform .2s ease,opacity .2s;opacity:0;pointer-events:none;}
+#ptr-indicator.visible{opacity:1;}
+#ptr-indicator.ready{color:var(--green);border-color:rgba(38,217,138,.4);}
+.ptr-spinner{width:16px;height:16px;border:2px solid rgba(245,200,66,.3);border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;}
+.ptr-indicator.ready .ptr-spinner{border-top-color:var(--green);border-color:rgba(38,217,138,.3);}
+@keyframes spin{to{transform:rotate(360deg);}}
+
 /* FADE */
 .fade{opacity:0;transform:translateY(20px);transition:opacity .5s ease,transform .5s ease;}
 .fade.in{opacity:1;transform:translateY(0);}
@@ -299,7 +309,6 @@ footer{padding:48px 24px 32px;border-top:1px solid var(--border);display:flex;fl
 .act-btn{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--muted);background:none;border:none;cursor:pointer;transition:color .2s;padding:4px 0;}
 .act-btn:hover,.act-btn.liked{color:var(--gold);}
 .act-cnt{font-family:'Space Mono',monospace;font-size:12px;}
-@keyframes pulse{0%,100%{box-shadow:0 4px 16px rgba(245,200,66,0.4);}50%{box-shadow:0 4px 24px rgba(245,200,66,0.8);}}
 @keyframes pop{0%{transform:scale(1);}50%{transform:scale(1.4);}100%{transform:scale(1);}}
 .pop{animation:pop .2s ease;}
 
@@ -345,14 +354,14 @@ textarea.form-inp{resize:vertical;min-height:80px;}
 .app-empty{text-align:center;padding:60px 20px;color:var(--muted);}
 .app-empty-ico{font-size:40px;margin-bottom:12px;}
 
-/* MOB NAV */
-.mob-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:rgba(8,9,12,.95);backdrop-filter:blur(20px);border-top:1px solid var(--border);z-index:100;}
+/* MOB NAV — 4 bottom tabs only */
+.mob-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:rgba(8,9,12,.97);backdrop-filter:blur(20px);border-top:1px solid var(--border);z-index:100;height:60px;}
 @media(max-width:900px){
   .mob-nav{display:flex;}
-  .mob-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px;background:none;border:none;color:var(--muted);font-size:10px;cursor:pointer;transition:color .2s;}
+  .mob-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px 4px;background:none;border:none;color:var(--muted);font-size:9px;font-weight:600;cursor:pointer;transition:color .2s;-webkit-tap-highlight-color:transparent;}
   .mob-btn.active,.mob-btn:hover{color:var(--gold);}
-  .mob-ico{font-size:20px;}
-  #page-app{padding-bottom:70px;}
+  .mob-ico{font-size:22px;line-height:1;}
+  #page-app{padding-bottom:64px;}
 }
 @media(max-width:680px){
   #landing-nav{padding:0 16px;}
@@ -362,6 +371,35 @@ textarea.form-inp{resize:vertical;min-height:80px;}
   .hero-numbers{gap:28px;}
   footer{padding:36px 16px 24px;}
 }
+
+/* DRAWER */
+.drawer-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:150;-webkit-tap-highlight-color:transparent;}
+.drawer-overlay.open{display:block;}
+.drawer{position:fixed;top:0;left:0;bottom:0;width:280px;background:var(--bg2);border-right:1px solid var(--border);z-index:160;transform:translateX(-100%);transition:transform .25s ease;overflow-y:auto;display:flex;flex-direction:column;}
+.drawer.open{transform:translateX(0);}
+.drawer-header{padding:20px 16px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;}
+.drawer-av{width:48px;height:48px;border-radius:50%;background:var(--bg3);border:2px solid var(--border-g);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:22px;cursor:pointer;}
+.drawer-av img{width:100%;height:100%;object-fit:cover;}
+.drawer-name{font-size:15px;font-weight:700;margin-bottom:2px;}
+.drawer-addr{font-size:11px;color:var(--muted);font-family:'Space Mono',monospace;}
+.drawer-body{padding:12px 8px;flex:1;}
+.drawer-lbl{font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:8px 10px 4px;}
+.drawer-btn{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;font-size:14px;font-weight:500;color:var(--muted);cursor:pointer;transition:all .15s;border:none;background:none;width:100%;text-align:left;-webkit-tap-highlight-color:transparent;}
+.drawer-btn:active{background:var(--bg3);}
+.drawer-btn.active{background:rgba(245,200,66,0.1);color:var(--gold);}
+.drawer-ico{font-size:18px;width:24px;text-align:center;flex-shrink:0;}
+.drawer-badge{background:var(--red);color:#fff;font-size:10px;padding:1px 6px;border-radius:100px;margin-left:auto;}
+
+/* App nav on mobile */
+@media(max-width:900px){
+  .app-sl,.app-sr{display:none;}
+  #app-nav .back-to-landing{display:none;}
+  .app-nav-menu-btn{display:flex!important;}
+  .new-post-nav-btn{display:none!important;}
+}
+.app-nav-menu-btn{display:none;align-items:center;justify-content:center;width:38px;height:38px;border-radius:50%;overflow:hidden;background:var(--bg3);border:2px solid var(--border-g);cursor:pointer;-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.app-nav-menu-av{width:100%;height:100%;object-fit:cover;}
+.app-nav-menu-ico{font-size:18px;}
 </style>
 </head>
 <body>
@@ -423,18 +461,24 @@ textarea.form-inp{resize:vertical;min-height:80px;}
     <div style="font-size:20px;font-weight:700;margin-bottom:6px;">Connect Wallet</div>
     <div style="font-size:13px;color:var(--muted);margin-bottom:24px;">Choose your wallet to continue</div>
     <div style="display:flex;flex-direction:column;gap:10px;">
-      <button onclick="connectWithWallet('metamask')" style="display:flex;align-items:center;gap:14px;padding:14px 18px;background:var(--bg3);border:1px solid var(--border);border-radius:12px;cursor:pointer;transition:all .2s;text-align:left;" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='var(--border)'">
+      <button onclick="connectWithWallet('metamask')" style="display:flex;align-items:center;gap:14px;padding:14px 18px;background:var(--bg3);border:1px solid var(--border);border-radius:12px;cursor:pointer;transition:all .2s;text-align:left;width:100%;" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='var(--border)'">
         <img src="https://upload.wikimedia.org/wikipedia/commons/3/36/MetaMask_Fox.svg" style="width:36px;height:36px;"/>
-        <div><div style="font-size:15px;font-weight:700;color:var(--text);">MetaMask</div><div style="font-size:12px;color:var(--muted);">Most popular browser wallet</div></div>
+        <div><div style="font-size:15px;font-weight:700;color:var(--text);">MetaMask</div><div style="font-size:12px;color:var(--muted);">Browser extension / mobile</div></div>
       </button>
-      <button onclick="connectWithWallet('trust')" style="display:flex;align-items:center;gap:14px;padding:14px 18px;background:var(--bg3);border:1px solid var(--border);border-radius:12px;cursor:pointer;transition:all .2s;text-align:left;" onmouseover="this.style.borderColor='#3375BB'" onmouseout="this.style.borderColor='var(--border)'">
+      <button onclick="connectWithWallet('trust')" style="display:flex;align-items:center;gap:14px;padding:14px 18px;background:var(--bg3);border:1px solid var(--border);border-radius:12px;cursor:pointer;transition:all .2s;text-align:left;width:100%;" onmouseover="this.style.borderColor='#3375BB'" onmouseout="this.style.borderColor='var(--border)'">
         <img src="https://trustwallet.com/assets/images/media/assets/trust_platform.svg" style="width:36px;height:36px;border-radius:8px;" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 36 36%22><rect width=%2236%22 height=%2236%22 rx=%228%22 fill=%22%233375BB%22/><text y=%2226%22 x=%224%22 font-size=%2222%22>🛡</text></svg>'"/>
-        <div><div style="font-size:15px;font-weight:700;color:var(--text);">Trust Wallet</div><div style="font-size:12px;color:var(--muted);">Mobile & browser wallet</div></div>
+        <div><div style="font-size:15px;font-weight:700;color:var(--text);">Trust Wallet</div><div style="font-size:12px;color:var(--muted);">Mobile &amp; browser wallet</div></div>
       </button>
-      <button onclick="connectWithWallet('injected')" style="display:flex;align-items:center;gap:14px;padding:14px 18px;background:var(--bg3);border:1px solid var(--border);border-radius:12px;cursor:pointer;transition:all .2s;text-align:left;" onmouseover="this.style.borderColor='var(--muted)'" onmouseout="this.style.borderColor='var(--border)'">
+      <button onclick="connectWithWallet('injected')" style="display:flex;align-items:center;gap:14px;padding:14px 18px;background:var(--bg3);border:1px solid var(--border);border-radius:12px;cursor:pointer;transition:all .2s;text-align:left;width:100%;" onmouseover="this.style.borderColor='var(--muted)'" onmouseout="this.style.borderColor='var(--border)'">
         <div style="width:36px;height:36px;border-radius:8px;background:var(--bg2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:20px;">🔗</div>
         <div><div style="font-size:15px;font-weight:700;color:var(--text);">Other Wallet</div><div style="font-size:12px;color:var(--muted);">Any injected Web3 wallet</div></div>
       </button>
+      <!-- Mobile deeplink hint — shown only on mobile -->
+      <div id="mobileWalletHint" style="display:none;background:rgba(245,200,66,0.06);border:1px solid var(--border-g);border-radius:10px;padding:12px 14px;font-size:12px;color:var(--muted);line-height:1.7;">
+        📱 <b style="color:var(--gold);">On mobile?</b> Open this site inside the wallet app browser:<br>
+        <a href="https://metamask.app.link/dapp/opengate.bond" style="color:var(--gold);font-weight:700;display:inline-block;margin-top:6px;padding:6px 14px;background:rgba(245,200,66,0.1);border-radius:8px;">→ Open in MetaMask</a>
+        <a href="https://link.trustwallet.com/open_url?coin_id=60&url=https://opengate.bond" style="color:#3375BB;font-weight:700;display:inline-block;margin-top:4px;padding:6px 14px;background:rgba(51,117,187,0.1);border-radius:8px;">→ Open in Trust Wallet</a>
+      </div>
     </div>
   </div>
 </div>
@@ -687,9 +731,9 @@ textarea.form-inp{resize:vertical;min-height:80px;}
       <button class="new-post-nav-btn" id="newPostBtn" onclick="focusComposer()">✍️ Post</button>
       <button id="pwaInstallBtn" style="display:none;background:var(--bg3);border:1px solid var(--border);color:var(--muted);border-radius:9px;padding:6px 12px;font-size:12px;cursor:pointer;" onclick="installPWA()">📲 Install</button>
       <button id="connectBtn" onclick="connectWallet()"><div class="w-dot"></div>Connect Wallet</button>
+      <button class="app-nav-menu-btn" id="drawerOpenBtn" onclick="openDrawer()"><span id="drawerBtnContent">☰</span></button>
     </div>
   </nav>
-
   <div class="app-layout">
     <div class="app-sl">
       <div class="side-sec">
@@ -722,7 +766,7 @@ textarea.form-inp{resize:vertical;min-height:80px;}
       <div id="view-feed">
         <div class="feed-hdr" style="display:flex;align-items:center;justify-content:space-between;">
           <span>Home</span>
-          <button id="newPostsBtn" onclick="loadPosts()" style="display:none;background:rgba(245,200,66,0.92);backdrop-filter:blur(12px);color:#08090C;border-radius:20px;padding:8px 20px;font-size:13px;font-weight:700;border:none;cursor:pointer;box-shadow:0 4px 16px rgba(245,200,66,0.4);transition:all .2s;white-space:nowrap;">↻ New posts</button>
+          <button id="newPostsBtn" onclick="loadPosts()" style="display:none;background:var(--gold);color:#08090C;border-radius:20px;padding:4px 14px;font-size:12px;font-weight:700;border:none;cursor:pointer;">↻ New posts</button>
         </div>
         <div class="feed-tabs">
           <button class="feed-tab active" onclick="switchFeedTab('all',this)">All Posts</button>
@@ -1492,24 +1536,57 @@ textarea.form-inp{resize:vertical;min-height:80px;}
     </div>
   </div>
 
+  <!-- PULL TO REFRESH INDICATOR -->
+  <div id="ptr-indicator"><div class="ptr-spinner"></div><span id="ptr-text">Pull to refresh</span></div>
+
+  <!-- DRAWER OVERLAY -->
+  <div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
+
+  <!-- DRAWER MENU -->
+  <div class="drawer" id="drawer">
+    <div class="drawer-header">
+      <div class="drawer-av" id="drawerAv" onclick="closeDrawer();showTab('profile')">🧑</div>
+      <div style="flex:1;min-width:0;">
+        <div class="drawer-name" id="drawerName">OpenGate</div>
+        <div class="drawer-addr" id="drawerAddr">Connect wallet →</div>
+      </div>
+      <button onclick="closeDrawer()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:4px;">✕</button>
+    </div>
+    <div class="drawer-body">
+      <div class="drawer-lbl">Main</div>
+      <button class="drawer-btn active" id="drawer-feed" onclick="closeDrawer();showTab('feed')"><span class="drawer-ico">🏠</span>Home Feed</button>
+      <button class="drawer-btn" id="drawer-profile" onclick="closeDrawer();showTab('profile')"><span class="drawer-ico">👤</span>My Profile</button>
+      <button class="drawer-btn" id="drawer-notifs" onclick="closeDrawer();showTab('notifs')"><span class="drawer-ico">🔔</span>Notifications<span class="drawer-badge" id="drawerNotifBadge" style="display:none;"></span></button>
+      <button class="drawer-btn" id="drawer-messages" onclick="closeDrawer();showTab('messages')"><span class="drawer-ico">💬</span>Messages<span class="drawer-badge" id="drawerUnreadBadge" style="display:none;"></span></button>
+      <button class="drawer-btn" id="drawer-explore" onclick="closeDrawer();showTab('explore')"><span class="drawer-ico">🔍</span>Explore</button>
+
+      <div class="drawer-lbl">DeFi</div>
+      <button class="drawer-btn" onclick="closeDrawer();window.open('https://www.easyswap.life','_blank')"><span class="drawer-ico">🟡</span>Buy GATE</button>
+      <button class="drawer-btn" id="drawer-staking" onclick="closeDrawer();showTab('staking')"><span class="drawer-ico">💎</span>Staking</button>
+      <button class="drawer-btn" id="drawer-lending" onclick="closeDrawer();showTab('lending')"><span class="drawer-ico">🏦</span>Lending</button>
+      <button class="drawer-btn" id="drawer-presale" onclick="closeDrawer();showTab('presale')"><span class="drawer-ico">🚀</span>Presale</button>
+
+      <div class="drawer-lbl">Play</div>
+      <button class="drawer-btn" id="drawer-games" onclick="closeDrawer();showTab('games')"><span class="drawer-ico">🎮</span>Games</button>
+      <button class="drawer-btn" id="drawer-lottery" onclick="closeDrawer();showTab('lottery')"><span class="drawer-ico">🎰</span>Lottery</button>
+
+      <div class="drawer-lbl">More</div>
+      <button class="drawer-btn" id="drawer-market" onclick="closeDrawer();showTab('market')"><span class="drawer-ico">🛒</span>NFT Market</button>
+      <button class="drawer-btn" id="drawer-launchpad" onclick="closeDrawer();showTab('launchpad')"><span class="drawer-ico">🪙</span>Launchpad</button>
+      <button class="drawer-btn" id="drawer-faucet" onclick="closeDrawer();showTab('faucet')"><span class="drawer-ico">🚰</span>Faucet</button>
+
+      <div style="padding:16px 12px 8px;">
+        <button onclick="closeDrawer();goLanding()" style="width:100%;padding:10px;border-radius:10px;background:var(--bg3);border:1px solid var(--border);color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;">← Landing Page</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BOTTOM NAV — 4 tabs only -->
   <div class="mob-nav">
-    <button class="mob-btn active" onclick="showTab('feed')"><span class="mob-ico">🏠</span>Feed</button>
-    <button class="mob-btn" onclick="showTab('profile')"><span class="mob-ico">👤</span>Profile</button>
-    <button class="mob-btn" onclick="focusComposer();showTab('feed')"><span class="mob-ico">✍️</span>Post</button>
-    <button class="mob-btn" onclick="window.open('https://www.easyswap.life','_blank')"><span class="mob-ico">🟡</span>GATE</button>
-    <button class="mob-btn" onclick="showTab('staking')"><span class="mob-ico">💎</span>Stake</button>
-
-    <button class="mob-btn" onclick="showTab('lending')"><span class="mob-ico">🏦</span>Lend</button>
-    
-    
-    
-
-    <button class="mob-btn" onclick="showTab('market')"><span class="mob-ico">🛒</span>Market</button>
-    <button class="mob-btn" onclick="showTab('explore')"><span class="mob-ico">🔍</span>Explore</button>
-    <button class="mob-btn" onclick="showTab('notifs')"><span class="mob-ico">🔔</span>Notifs</button>
-    <button class="mob-btn" onclick="showTab('launchpad')"><span class="mob-ico">🪙</span>Launch</button>
-    <button class="mob-btn" onclick="showTab('presale')"><span class="mob-ico">🚀</span>Presale</button>
-    <button class="mob-btn" onclick="showTab('messages')"><span class="mob-ico">💬</span>DMs</button>
+    <button class="mob-btn active" id="mobbtn-feed" onclick="showTab('feed')"><span class="mob-ico">🏠</span>Feed</button>
+    <button class="mob-btn" id="mobbtn-post" onclick="focusComposer();showTab('feed')"><span class="mob-ico" style="width:42px;height:42px;background:var(--gold);border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:2px;margin-top:-10px;box-shadow:0 4px 12px rgba(245,200,66,.4);">✍️</span>Post</button>
+    <button class="mob-btn" id="mobbtn-notifs" onclick="showTab('notifs')" style="position:relative;"><span class="mob-ico">🔔</span>Notifs<span id="mobNotifDot" style="display:none;position:absolute;top:6px;right:calc(50% - 14px);width:8px;height:8px;border-radius:50%;background:var(--red);"></span></button>
+    <button class="mob-btn" id="mobbtn-menu" onclick="openDrawer()"><span class="mob-ico">☰</span>More</button>
   </div>
 </div>
 
@@ -1680,11 +1757,19 @@ function openApp(){
   loadPosts();
   subscribeToNewPosts();
   if(userAddr) loadGateBal();
+  // Show lang picker
+  var lp=document.getElementById('langPicker');
+  if(!lp){buildLangPicker();lp=document.getElementById('langPicker');}
+  if(lp)lp.style.display='flex';
+  applyLang();
 }
 function goLanding(){
   document.getElementById('page-app').classList.remove('active');
   document.getElementById('page-landing').classList.add('active');
   window.scrollTo(0,0);
+  // Hide lang picker
+  var lp=document.getElementById('langPicker');
+  if(lp)lp.style.display='none';
 }
 function scrollSec(id){ document.querySelector(id)?.scrollIntoView({behavior:'smooth'}); }
 
@@ -1692,23 +1777,34 @@ function scrollSec(id){ document.querySelector(id)?.scrollIntoView({behavior:'sm
 async function connectWithWallet(type){
   document.getElementById('walletModal').classList.remove('open');
   if(type==='trust'){
-    // Trust Wallet injects as window.ethereum on mobile
-    if(!window.ethereum){
-      showToast('Open in Trust Wallet browser','err');
-      window.open('https://link.trustwallet.com/open_url?coin_id=60&url='+encodeURIComponent(window.location.href),'_blank');
+    if(window.trustwallet){
+      window.ethereum=window.trustwallet;
+    } else if(!window.ethereum){
+      if(isMobile()){
+        // Redirect to Trust Wallet deeplink
+        window.location.href='https://link.trustwallet.com/open_url?coin_id=60&url='+encodeURIComponent(window.location.href);
+        return;
+      }
+      showToast('Install Trust Wallet browser extension','err');
       return;
     }
+  }
+  if(type==='metamask'&&!window.ethereum&&isMobile()){
+    window.location.href='https://metamask.app.link/dapp/'+window.location.host;
+    return;
   }
   await connectWallet();
 }
 
 async function connectWallet(){
   if(!window.ethereum){
-    // Check for Trust Wallet specifically
     if(window.trustwallet){
       window.ethereum = window.trustwallet;
+    } else if(isMobile()){
+      // Mobile without wallet browser — show options with deeplinks
+      document.getElementById('walletModal').classList.add('open');
+      return;
     } else {
-      // Show wallet options modal
       document.getElementById('walletModal').classList.add('open');
       return;
     }
@@ -1724,18 +1820,17 @@ async function connectWallet(){
     document.getElementById('newPostBtn').classList.add('show');
     document.getElementById('composer').classList.add('show');
     await ensureUser();
+    updateDrawerUser();
     loadGateBal();
     loadPosts();
     subscribeToNewPosts();
     updateNotifBadge();
     cleanupOldNotifications();
     loadRewardsPool();
-    // Subscribe after userAddr confirmed
     setTimeout(function(){
       subscribeToConversations();
       updateUnreadBadge();
     }, 500);
-    // Realtime for notifications
     try{
       sb.channel('notifs-'+userAddr)
         .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'to_wallet=eq.'+userAddr},function(){
@@ -2052,31 +2147,22 @@ async function createPost(){
   btn.disabled=false; btn.textContent='Post';
 }
 let postsRealtimeChannel=null;
-let _feedRefreshTimer=null;
-let _lastPostsCount=0;
 function subscribeToNewPosts(){
   if(postsRealtimeChannel) return;
-  postsRealtimeChannel=sb.channel('posts-feed-'+Date.now())
+  postsRealtimeChannel=sb.channel('posts-feed')
     .on('postgres_changes',{event:'INSERT',schema:'public',table:'posts'},function(){
-      showNewPostsBtn();
+      // If user is at top of feed — auto reload
+      // If scrolled down — show button instead
+      const feedArea=document.querySelector('.feed-area');
+      const scrollTop=feedArea?feedArea.scrollTop:window.scrollY;
+      if(scrollTop<100){
+        loadPosts();
+      } else {
+        const btn=document.getElementById('newPostsBtn');
+        if(btn) btn.style.display='block';
+      }
     })
     .subscribe();
-  // Fallback polling every 10s
-  clearInterval(_feedRefreshTimer);
-  _feedRefreshTimer=setInterval(async function(){
-    const feedView=document.getElementById('view-feed');
-    if(!feedView||feedView.style.display==='none') return;
-    try{
-      const {count}=await sb.from('posts').select('*',{count:'exact',head:true});
-      if(count&&count>_lastPostsCount&&_lastPostsCount>0){
-        showNewPostsBtn();
-      }
-    }catch(e){}
-  },10000);
-}
-function showNewPostsBtn(){
-  const btn=document.getElementById('newPostsBtn');
-  if(btn){btn.style.display='inline-block';btn.style.animation='pulse 1s ease-in-out infinite';}
 }
 
 async function loadPosts(){
@@ -2109,7 +2195,6 @@ async function loadPosts(){
     list.innerHTML=posts.map(p=>renderPost(p,ls.has(p.id))).join('');
     // Load comment counts asynchronously
     loadCommentCounts(posts.map(p=>p.id));
-    _lastPostsCount=posts.length;
     // Load more button
     if(posts.length===15){
       const more=document.createElement('div');
@@ -4762,7 +4847,390 @@ async function loadPassSupply(){
   }catch(e){}
 }
 
-// ── INIT ──
+// ── DRAWER ──
+function openDrawer(){
+  document.getElementById('drawer').classList.add('open');
+  document.getElementById('drawerOverlay').classList.add('open');
+  document.body.style.overflow='hidden';
+  updateDrawerUser();
+}
+function closeDrawer(){
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('drawerOverlay').classList.remove('open');
+  document.body.style.overflow='';
+}
+function updateDrawerUser(){
+  const av=document.getElementById('drawerAv');
+  const nm=document.getElementById('drawerName');
+  const ad=document.getElementById('drawerAddr');
+  const btn=document.getElementById('drawerOpenBtn');
+  const btnContent=document.getElementById('drawerBtnContent');
+  if(userAddr&&currentUser){
+    // Update avatar in drawer
+    if(currentUser.avatar_url){
+      av.innerHTML='<img src="'+currentUser.avatar_url+'" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.textContent=\'🧑\'"/>';
+    } else {
+      av.textContent=currentUser.username?currentUser.username[0].toUpperCase():'🧑';
+    }
+    nm.textContent=currentUser.username||sAddr(userAddr);
+    ad.textContent=sAddr(userAddr);
+    // Show avatar in top-right nav button
+    if(btnContent){
+      if(currentUser.avatar_url){
+        btnContent.innerHTML='<img src="'+currentUser.avatar_url+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.parentElement.innerHTML=\'👤\'"/>';
+        btn.style.fontSize='0';
+      } else {
+        btnContent.textContent=currentUser.username?currentUser.username[0].toUpperCase():'👤';
+        btn.style.fontSize='16px';
+      }
+    }
+  } else {
+    av.textContent='🧑';
+    nm.textContent='OpenGate';
+    ad.textContent='Tap to connect wallet';
+    av.onclick=function(){closeDrawer();connectWallet();};
+    if(btnContent){btnContent.textContent='☰';btn.style.fontSize='18px';}
+  }
+}
+function updateDrawerBadges(){
+  // Notif badge
+  const nb=document.getElementById('drawerNotifBadge');
+  const mnb=document.getElementById('notifBadge');
+  const mob=document.getElementById('mobNotifDot');
+  if(nb&&mnb){
+    if(mnb.style.display!=='none'){
+      nb.style.display='inline';nb.textContent=mnb.textContent;
+      if(mob)mob.style.display='block';
+    } else {
+      nb.style.display='none';
+      if(mob)mob.style.display='none';
+    }
+  }
+  // Unread badge
+  const ub=document.getElementById('drawerUnreadBadge');
+  const mub=document.getElementById('unreadBadge');
+  if(ub&&mub){
+    if(mub.style.display!=='none'){ub.style.display='inline';ub.textContent=mub.textContent;}
+    else ub.style.display='none';
+  }
+}
+
+// Patch showTab to also update drawer active state
+const _origShowTab=showTab;
+function showTab(tab){
+  _origShowTab(tab);
+  // Update drawer active buttons
+  document.querySelectorAll('.drawer-btn').forEach(b=>b.classList.remove('active'));
+  const db=document.getElementById('drawer-'+tab);
+  if(db)db.classList.add('active');
+  // Update bottom tab
+  document.querySelectorAll('.mob-btn').forEach(b=>b.classList.remove('active'));
+  const mb=document.getElementById('mobbtn-'+tab);
+  if(mb)mb.classList.add('active');
+}
+
+// Patch updateNotifBadge to also update drawer
+const _origUpdateNotifBadge=updateNotifBadge;
+updateNotifBadge=async function(){
+  await _origUpdateNotifBadge();
+  updateDrawerBadges();
+};
+const _origUpdateUnreadBadge=updateUnreadBadge;
+updateUnreadBadge=async function(){
+  await _origUpdateUnreadBadge();
+  updateDrawerBadges();
+};
+
+// ── MOBILE WALLET FIX ──
+// Better detection for mobile wallets
+function isMobile(){return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);}
+function isInWalletBrowser(){
+  const ua=navigator.userAgent;
+  return ua.includes('MetaMaskMobile')||ua.includes('Trust/')||window.ethereum?.isMetaMask||window.ethereum?.isTrust;
+}
+
+
+
+
+// ── i18n ──
+const LANGS = {
+  en: {
+    feed:'Feed', profile:'Profile', post:'Post', notifs:'Notifs', more:'More',
+    home:'Home', allPosts:'All Posts', following:'Following',
+    connectWallet:'Connect Wallet', explore:'Explore', messages:'Messages',
+    staking:'Staking', lending:'Lending', presale:'Presale', games:'Games',
+    lottery:'Lottery', market:'NFT Market', launchpad:'Launchpad', faucet:'Faucet',
+    buyGate:'Buy GATE', landingPage:'← Landing Page',
+    whatsOnMind:"What's on your mind?", pullToRefresh:'Pull to refresh',
+    releaseToRefresh:'Release to refresh!', refreshing:'Refreshing...',
+    newPosts:'↻ New posts', search:'Search users, posts...',
+    mainMenu:'Main', defiFull:'DeFi', play:'Play',
+  },
+  ru: {
+    feed:'Лента', profile:'Профиль', post:'Пост', notifs:'Уведомл.', more:'Меню',
+    home:'Главная', allPosts:'Все посты', following:'Подписки',
+    connectWallet:'Подключить кошелёк', explore:'Поиск', messages:'Сообщения',
+    staking:'Стейкинг', lending:'Займы', presale:'Пресейл', games:'Игры',
+    lottery:'Лотерея', market:'NFT рынок', launchpad:'Лончпад', faucet:'Кран',
+    buyGate:'Купить GATE', landingPage:'← На главную',
+    whatsOnMind:'Что у вас на уме?', pullToRefresh:'Потяните для обновления',
+    releaseToRefresh:'Отпустите!', refreshing:'Обновляем...',
+    newPosts:'↻ Новые посты', search:'Поиск пользователей...',
+    mainMenu:'Главное', defiFull:'DeFi', play:'Игры',
+  },
+  uk: {
+    feed:'Стрічка', profile:'Профіль', post:'Пост', notifs:'Сповіщ.', more:'Меню',
+    home:'Головна', allPosts:'Всі пости', following:'Підписки',
+    connectWallet:"Підключити гаманець", explore:'Пошук', messages:'Повідомлення',
+    staking:'Стейкінг', lending:'Позики', presale:'Пресейл', games:'Ігри',
+    lottery:'Лотерея', market:'NFT ринок', launchpad:'Лончпад', faucet:'Кран',
+    buyGate:'Купити GATE', landingPage:'← На головну',
+    whatsOnMind:'Що у вас на думці?', pullToRefresh:'Потягніть для оновлення',
+    releaseToRefresh:'Відпустіть!', refreshing:'Оновлення...',
+    newPosts:'↻ Нові пости', search:'Пошук користувачів...',
+    mainMenu:'Головне', defiFull:'DeFi', play:'Ігри',
+  },
+  hi: {
+    feed:'फीड', profile:'प्रोफाइल', post:'पोस्ट', notifs:'सूचना', more:'मेनू',
+    home:'होम', allPosts:'सभी पोस्ट', following:'फ़ॉलोइंग',
+    connectWallet:'वॉलेट जोड़ें', explore:'खोजें', messages:'संदेश',
+    staking:'स्टेकिंग', lending:'लोन', presale:'प्रीसेल', games:'गेम्स',
+    lottery:'लॉटरी', market:'NFT', launchpad:'लॉन्च', faucet:'फ़ॉसेट',
+    buyGate:'GATE खरीदें', landingPage:'← होम',
+    whatsOnMind:'आप क्या सोच रहे हैं?', pullToRefresh:'नीचे खींचें',
+    releaseToRefresh:'छोड़ें!', refreshing:'लोड हो रहा है...',
+    newPosts:'↻ नई पोस्ट', search:'खोजें...',
+    mainMenu:'मुख्य', defiFull:'DeFi', play:'खेलें',
+  },
+  zh: {
+    feed:'动态', profile:'我的', post:'发帖', notifs:'通知', more:'更多',
+    home:'主页', allPosts:'全部帖子', following:'关注',
+    connectWallet:'连接钱包', explore:'探索', messages:'消息',
+    staking:'质押', lending:'借贷', presale:'预售', games:'游戏',
+    lottery:'彩票', market:'NFT市场', launchpad:'发射台', faucet:'水龙头',
+    buyGate:'购买GATE', landingPage:'← 首页',
+    whatsOnMind:'你在想什么？', pullToRefresh:'下拉刷新',
+    releaseToRefresh:'松开刷新！', refreshing:'刷新中...',
+    newPosts:'↻ 新帖子', search:'搜索...',
+    mainMenu:'主要', defiFull:'DeFi', play:'游戏',
+  },
+  tr: {
+    feed:'Akış', profile:'Profil', post:'Gönderi', notifs:'Bildirim', more:'Menü',
+    home:'Ana Sayfa', allPosts:'Tüm Gönderiler', following:'Takip',
+    connectWallet:'Cüzdan Bağla', explore:'Keşfet', messages:'Mesajlar',
+    staking:'Staking', lending:'Kredi', presale:'Ön Satış', games:'Oyunlar',
+    lottery:'Piyango', market:'NFT Pazar', launchpad:'Lansman', faucet:'Faucet',
+    buyGate:'GATE Al', landingPage:'← Ana Sayfa',
+    whatsOnMind:'Aklında ne var?', pullToRefresh:'Yenilemek için çek',
+    releaseToRefresh:'Bırak!', refreshing:'Yenileniyor...',
+    newPosts:'↻ Yeni gönderiler', search:'Ara...',
+    mainMenu:'Ana', defiFull:'DeFi', play:'Oyna',
+  },
+  de: {
+    feed:'Feed', profile:'Profil', post:'Post', notifs:'Meldungen', more:'Menü',
+    home:'Start', allPosts:'Alle Beiträge', following:'Folge ich',
+    connectWallet:'Wallet verbinden', explore:'Entdecken', messages:'Nachrichten',
+    staking:'Staking', lending:'Leihen', presale:'Vorverkauf', games:'Spiele',
+    lottery:'Lotterie', market:'NFT Markt', launchpad:'Launchpad', faucet:'Faucet',
+    buyGate:'GATE kaufen', landingPage:'← Startseite',
+    whatsOnMind:'Was denkst du?', pullToRefresh:'Zum Aktualisieren ziehen',
+    releaseToRefresh:'Loslassen!', refreshing:'Aktualisierung...',
+    newPosts:'↻ Neue Beiträge', search:'Suche...',
+    mainMenu:'Haupt', defiFull:'DeFi', play:'Spielen',
+  },
+};
+
+function detectLang(){
+  const saved=localStorage.getItem('og_lang');
+  if(saved&&LANGS[saved]) return saved;
+  const bl=(navigator.language||navigator.userLanguage||'en').toLowerCase();
+  if(bl.startsWith('ru')) return 'ru';
+  if(bl.startsWith('uk')) return 'uk';
+  if(bl.startsWith('hi')) return 'hi';
+  if(bl.startsWith('zh')) return 'zh';
+  if(bl.startsWith('tr')) return 'tr';
+  if(bl.startsWith('de')) return 'de';
+  return 'en';
+}
+
+let currentLang=detectLang();
+function t(key){return(LANGS[currentLang]&&LANGS[currentLang][key])||LANGS.en[key]||key;}
+
+function setLang(lang){
+  if(!LANGS[lang])return;
+  currentLang=lang;
+  localStorage.setItem('og_lang',lang);
+  applyLang();
+}
+
+function applyLang(){
+  // Bottom nav text nodes
+  const mobMap={
+    'mobbtn-feed':'feed','mobbtn-post':'post',
+    'mobbtn-notifs':'notifs','mobbtn-menu':'more'
+  };
+  Object.keys(mobMap).forEach(function(id){
+    const el=document.getElementById(id);
+    if(!el)return;
+    // last text node
+    Array.from(el.childNodes).forEach(function(n){
+      if(n.nodeType===3&&n.textContent.trim())n.textContent=t(mobMap[id]);
+    });
+  });
+  // Feed header
+  const fh=document.querySelector('#view-feed .feed-hdr span:first-child');
+  if(fh)fh.textContent=t('home');
+  // Feed tabs
+  const tabs=document.querySelectorAll('#view-feed .feed-tab');
+  if(tabs[0])tabs[0].textContent=t('allPosts');
+  if(tabs[1])tabs[1].textContent=t('following');
+  // Composer
+  const ci=document.getElementById('postText');
+  if(ci)ci.placeholder=t('whatsOnMind');
+  // Connect btn
+  const cb=document.getElementById('connectBtn');
+  if(cb&&!cb.classList.contains('connected'))cb.innerHTML='<div class="w-dot"></div>'+t('connectWallet');
+  // Drawer btns
+  const dm={
+    'drawer-feed':'home','drawer-profile':'profile','drawer-notifs':'notifs',
+    'drawer-messages':'messages','drawer-explore':'explore','drawer-staking':'staking',
+    'drawer-lending':'lending','drawer-presale':'presale','drawer-games':'games',
+    'drawer-lottery':'lottery','drawer-market':'market','drawer-launchpad':'launchpad',
+    'drawer-faucet':'faucet'
+  };
+  Object.keys(dm).forEach(function(id){
+    const el=document.getElementById(id);
+    if(!el)return;
+    const ico=el.querySelector('.drawer-ico');
+    const badge=el.querySelector('.drawer-badge');
+    const icoHtml=ico?ico.outerHTML:'';
+    el.innerHTML=icoHtml+t(dm[id]);
+    if(badge)el.appendChild(badge);
+    el.style.cursor='pointer';
+  });
+  // Drawer "Buy GATE" button (no id, find by content)
+  // Drawer labels
+  const dlbls=document.querySelectorAll('.drawer-lbl');
+  const lkeys=['mainMenu','defiFull','play','more'];
+  dlbls.forEach(function(el,i){if(lkeys[i])el.textContent=t(lkeys[i]);});
+  // PTR text
+  const pt=document.getElementById('ptr-text');
+  if(pt)pt.textContent=t('pullToRefresh');
+  // New posts btn
+  const np=document.getElementById('newPostsBtn');
+  if(np&&np.style.display!=='none')np.textContent=t('newPosts');
+  // Search
+  const si=document.getElementById('searchInput');
+  if(si)si.placeholder=t('search');
+  // Landing page btn in drawer
+  const landBtns=document.querySelectorAll('.drawer-body button:last-of-type');
+  landBtns.forEach(function(b){if(b.textContent.includes('←')||b.textContent.includes('Landing')||b.textContent.includes('главную')||b.textContent.includes('головну'))b.textContent=t('landingPage');});
+}
+
+// Language picker
+const LANG_FLAGS={en:'🇬🇧',ru:'🇷🇺',uk:'🇺🇦',hi:'🇮🇳',zh:'🇨🇳',tr:'🇹🇷',de:'🇩🇪'};
+const LANG_NAMES={en:'EN',ru:'RU',uk:'UK',hi:'HI',zh:'ZH',tr:'TR',de:'DE'};
+
+function buildLangPicker(){
+  const existing=document.getElementById('langPicker');
+  if(existing)return;
+  const wrap=document.createElement('div');
+  wrap.id='langPicker';
+  wrap.style.cssText='position:fixed;bottom:72px;right:12px;z-index:90;display:flex;flex-direction:column;gap:4px;align-items:flex-end;';
+  const menu=document.createElement('div');
+  menu.id='langMenu';
+  menu.style.cssText='display:none;flex-direction:column;gap:4px;align-items:flex-end;background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:8px;box-shadow:0 4px 20px rgba(0,0,0,.4);';
+  Object.keys(LANG_FLAGS).forEach(function(lang){
+    const btn=document.createElement('button');
+    btn.style.cssText='display:flex;align-items:center;gap:8px;padding:8px 14px;background:none;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;color:var(--text);width:100%;white-space:nowrap;-webkit-tap-highlight-color:transparent;';
+    if(lang===currentLang)btn.style.cssText+=';background:rgba(245,200,66,0.1);color:var(--gold);';
+    btn.innerHTML=LANG_FLAGS[lang]+' '+LANG_NAMES[lang];
+    btn.onclick=function(){
+      setLang(lang);
+      toggle.textContent=LANG_FLAGS[lang];
+      menu.style.display='none';
+      menu.querySelectorAll('button').forEach(function(b){b.style.background='none';b.style.color='var(--text)';});
+      btn.style.background='rgba(245,200,66,0.1)';btn.style.color='var(--gold)';
+    };
+    menu.appendChild(btn);
+  });
+  const toggle=document.createElement('button');
+  toggle.style.cssText='width:40px;height:40px;border-radius:50%;background:var(--bg2);border:1px solid var(--border);font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 12px rgba(0,0,0,.3);-webkit-tap-highlight-color:transparent;';
+  toggle.textContent=LANG_FLAGS[currentLang]||'🌐';
+  toggle.onclick=function(e){
+    e.stopPropagation();
+    menu.style.display=menu.style.display==='none'?'flex':'none';
+  };
+  document.addEventListener('click',function(){menu.style.display='none';});
+  wrap.appendChild(menu);
+  wrap.appendChild(toggle);
+  document.getElementById('page-app').appendChild(wrap);
+}
+
+// ── PULL TO REFRESH ──
+(function(){
+  var startY=0,currentY=0,pulling=false;
+  var THRESHOLD=70,MAX_PULL=120;
+
+  function ind(){return document.getElementById('ptr-indicator');}
+  function ptt(){return document.getElementById('ptr-text');}
+
+  function hide(){
+    var el=ind();if(!el)return;
+    el.style.transform='translateX(-50%) translateY(-70px)';
+    el.classList.remove('visible','ready');
+    var pt=ptt();if(pt)pt.textContent=t('pullToRefresh');
+    pulling=false;startY=0;currentY=0;
+  }
+
+  document.addEventListener('touchstart',function(e){
+    var fv=document.getElementById('view-feed');
+    if(!fv||fv.style.display==='none')return;
+    var ap=document.getElementById('page-app');
+    if(!ap||!ap.classList.contains('active'))return;
+    if(window.scrollY>5)return;
+    startY=e.touches[0].clientY;
+    pulling=true;
+  },{passive:true});
+
+  document.addEventListener('touchmove',function(e){
+    if(!pulling)return;
+    if(window.scrollY>5){hide();return;}
+    currentY=e.touches[0].clientY;
+    var diff=Math.min(currentY-startY,MAX_PULL);
+    if(diff<=0){hide();return;}
+    var el=ind();if(!el)return;
+    var ty=Math.min(-70+diff*0.9,10);
+    el.style.transform='translateX(-50%) translateY('+ty+'px)';
+    el.classList.add('visible');
+    var pt=ptt();
+    if(diff>=THRESHOLD){
+      el.classList.add('ready');
+      if(pt)pt.textContent=t('releaseToRefresh');
+    }else{
+      el.classList.remove('ready');
+      if(pt)pt.textContent=t('pullToRefresh');
+    }
+    if(diff>10)e.preventDefault();
+  },{passive:false});
+
+  document.addEventListener('touchend',function(){
+    if(!pulling)return;
+    var diff=currentY-startY;
+    if(diff>=THRESHOLD){
+      var el=ind();
+      if(el){el.style.transform='translateX(-50%) translateY(0px)';el.classList.remove('ready');}
+      var pt=ptt();if(pt)pt.textContent=t('refreshing');
+      loadPosts();
+      loadGateBal(true);
+      setTimeout(hide,1200);
+    }else{
+      hide();
+    }
+    pulling=false;
+  },{passive:true});
+})();
+
 document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open');}));
 
 // ── VISIBILITY: Pause Realtime when tab hidden, resume when visible ──
@@ -4811,20 +5279,50 @@ document.querySelectorAll('.fade').forEach(el=>obs.observe(el));
 const sObs=new IntersectionObserver(e=>e.forEach(x=>{if(x.isIntersecting)x.target.querySelectorAll('.supply-fill[data-target]').forEach(b=>{setTimeout(()=>b.style.width=b.dataset.target,300)});}),{threshold:0.2});
 document.querySelectorAll('.pass-card').forEach(c=>sObs.observe(c));
 loadPassSupply();
+// Init lang + lang picker
+buildLangPicker();
+applyLang();
+// If starting on app page (e.g. PWA), show picker
+if(document.getElementById('page-app')&&document.getElementById('page-app').classList.contains('active')){
+  const lp=document.getElementById('langPicker');
+  if(lp)lp.style.display='flex';
+}
 let pwaPrompt=null;
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();pwaPrompt=e;const btn=document.getElementById('pwaInstallBtn');if(btn)btn.style.display='block';});
 async function installPWA(){if(!pwaPrompt)return;pwaPrompt.prompt();const result=await pwaPrompt.userChoice;if(result.outcome==='accepted')document.getElementById('pwaInstallBtn').style.display='none';pwaPrompt=null;}
 loadPosts();
 window.ethereum?.on('accountsChanged',()=>location.reload());
 window.ethereum?.on('chainChanged',()=>location.reload());
-async function tryAutoConnect(){if(!window.ethereum)return;try{const accounts=await window.ethereum.request({method:'eth_accounts'});if(accounts&&accounts.length>0){provider=new ethers.BrowserProvider(window.ethereum);signer=await provider.getSigner();userAddr=(await signer.getAddress()).toLowerCase();const btn=document.getElementById('connectBtn');btn.classList.add('connected');btn.innerHTML='<div class="w-dot"></div>'+userAddr.slice(0,6)+'...'+userAddr.slice(-4);document.getElementById('newPostBtn').classList.add('show');document.getElementById('composer').classList.add('show');await ensureUser();loadGateBal();loadPosts();updateNotifBadge();cleanupOldNotifications();loadRewardsPool();
-    setTimeout(function(){
-      subscribeToConversations();
-      updateUnreadBadge();
-      try{sb.channel('notifs-auto-'+userAddr).on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'to_wallet=eq.'+userAddr},function(){updateNotifBadge();}).subscribe();}catch(e){}
-      subscribeToMyGameInvites();
-    },800);
-  }}catch(e){}}
+async function tryAutoConnect(){
+  // Show mobile deeplink hint if on mobile and no wallet
+  if(isMobile()&&!window.ethereum){
+    const hint=document.getElementById('mobileWalletHint');
+    if(hint)hint.style.display='block';
+  }
+  if(!window.ethereum)return;
+  try{
+    const accounts=await window.ethereum.request({method:'eth_accounts'});
+    if(accounts&&accounts.length>0){
+      provider=new ethers.BrowserProvider(window.ethereum);
+      signer=await provider.getSigner();
+      userAddr=(await signer.getAddress()).toLowerCase();
+      const btn=document.getElementById('connectBtn');
+      btn.classList.add('connected');
+      btn.innerHTML='<div class="w-dot"></div>'+userAddr.slice(0,6)+'...'+userAddr.slice(-4);
+      document.getElementById('newPostBtn').classList.add('show');
+      document.getElementById('composer').classList.add('show');
+      await ensureUser();
+      updateDrawerUser();
+      loadGateBal();loadPosts();updateNotifBadge();cleanupOldNotifications();loadRewardsPool();
+      setTimeout(function(){
+        subscribeToConversations();
+        updateUnreadBadge();
+        try{sb.channel('notifs-auto-'+userAddr).on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'to_wallet=eq.'+userAddr},function(){updateNotifBadge();}).subscribe();}catch(e){}
+        subscribeToMyGameInvites();
+      },800);
+    }
+  }catch(e){}
+}
 tryAutoConnect();
 </script>
 <script>
