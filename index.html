@@ -354,23 +354,11 @@ textarea.form-inp{resize:vertical;min-height:80px;}
 .app-empty{text-align:center;padding:60px 20px;color:var(--muted);}
 .app-empty-ico{font-size:40px;margin-bottom:12px;}
 
-/* MOB NAV — 4 bottom tabs only */
+/* MOB NAV */
 .mob-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:rgba(8,9,12,.97);backdrop-filter:blur(20px);border-top:1px solid var(--border);z-index:100;height:60px;}
-@media(max-width:900px){
-  .mob-nav{display:flex;}
-  .mob-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px 4px;background:none;border:none;color:var(--muted);font-size:9px;font-weight:600;cursor:pointer;transition:color .2s;-webkit-tap-highlight-color:transparent;}
-  .mob-btn.active,.mob-btn:hover{color:var(--gold);}
-  .mob-ico{font-size:22px;line-height:1;}
-  #page-app{padding-bottom:64px;}
-}
-@media(max-width:680px){
-  #landing-nav{padding:0 16px;}
-  .nav-links{display:none;}
-  .section{padding:60px 16px;}
-  #hero{padding:80px 16px 50px;}
-  .hero-numbers{gap:28px;}
-  footer{padding:36px 16px 24px;}
-}
+.mob-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px 4px;background:none;border:none;color:var(--muted);font-size:9px;font-weight:600;cursor:pointer;transition:color .2s;-webkit-tap-highlight-color:transparent;position:relative;}
+.mob-btn.active,.mob-btn:hover{color:var(--gold);}
+.mob-ico{font-size:22px;line-height:1;}
 
 /* DRAWER */
 .drawer-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:150;-webkit-tap-highlight-color:transparent;}
@@ -389,17 +377,120 @@ textarea.form-inp{resize:vertical;min-height:80px;}
 .drawer-btn.active{background:rgba(245,200,66,0.1);color:var(--gold);}
 .drawer-ico{font-size:18px;width:24px;text-align:center;flex-shrink:0;}
 .drawer-badge{background:var(--red);color:#fff;font-size:10px;padding:1px 6px;border-radius:100px;margin-left:auto;}
+.app-nav-menu-btn{display:none;align-items:center;justify-content:center;width:38px;height:38px;border-radius:50%;overflow:hidden;background:var(--bg3);border:2px solid var(--border-g);cursor:pointer;-webkit-tap-highlight-color:transparent;flex-shrink:0;}
 
-/* App nav on mobile */
-@media(max-width:900px){
-  .app-sl,.app-sr{display:none;}
+/* ── RESPONSIVE — всі пристрої ── */
+
+/* Планшет горизонтальний (1024px+) — десктоп лейаут */
+@media(min-width:1024px){
+  .app-layout{grid-template-columns:240px 1fr 280px;}
+  .app-sl,.app-sr{display:block;}
+  .mob-nav{display:none!important;}
+  .app-nav-menu-btn{display:none!important;}
+  #app-nav .back-to-landing{display:block;}
+}
+
+/* Планшет портрет (768–1023px) — без правої панелі */
+@media(min-width:768px) and (max-width:1023px){
+  .app-layout{grid-template-columns:200px 1fr;max-width:100%;}
+  .app-sl{display:block;padding:16px 10px;}
+  .app-sr{display:none;}
+  .mob-nav{display:none!important;}
+  .app-nav-menu-btn{display:none!important;}
+  #app-nav .back-to-landing{display:block;}
+  .side-btn{font-size:13px;padding:8px 10px;}
+  .app-layout{padding-top:56px;}
+}
+
+/* Мобільний (до 767px) */
+@media(max-width:767px){
+  .app-sl,.app-sr{display:none!important;}
   #app-nav .back-to-landing{display:none;}
   .app-nav-menu-btn{display:flex!important;}
   .new-post-nav-btn{display:none!important;}
+  .mob-nav{display:flex;}
+  #page-app{padding-bottom:64px;}
+
+  /* Шрифти та відступи */
+  .post-card{padding:12px 14px;}
+  .post-txt{font-size:14px;}
+  .post-hdr{gap:6px;}
+  .post-name{font-size:13px;}
+  .post-wlt{font-size:11px;}
+  .post-time{font-size:11px;}
+  .post-av{width:36px;height:36px;}
+  .comp-av{width:36px;height:36px;}
+  .feed-hdr{font-size:15px;padding:12px 14px;}
+  .feed-tab{font-size:13px;padding:11px;}
+
+  /* Composer */
+  .comp-input{font-size:15px;}
+  .composer{padding:12px 14px;}
+
+  /* App nav */
+  #app-nav{padding:0 12px;height:52px;}
+  #connectBtn{font-size:12px;padding:6px 10px;}
+  .app-nav-logo{font-size:15px;}
+  .app-nav-logo img{width:26px;height:26px;}
+
+  /* Модальні вікна — повна ширина знизу на мобільному */
+  .modal-overlay{align-items:flex-end;padding:0;}
+  .modal-overlay > div, .modal-overlay > .modal{
+    border-radius:20px 20px 0 0!important;
+    max-width:100%!important;
+    width:100%!important;
+    padding:24px 20px 32px!important;
+    max-height:90vh;
+    overflow-y:auto;
+  }
+  .edit-modal-inner{border-radius:20px 20px 0 0!important;max-width:100%!important;width:100%!important;}
+
+  /* Контент вкладок */
+  #view-faucet > div, #view-lending > div,
+  #view-presale > div > div, #view-staking > div,
+  #view-launchpad > div{padding:12px 14px!important;}
+
+  /* Battleship boards */
+  #myBoard, #enemyBoard{max-width:calc(50vw - 24px)!important;}
 }
-.app-nav-menu-btn{display:none;align-items:center;justify-content:center;width:38px;height:38px;border-radius:50%;overflow:hidden;background:var(--bg3);border:2px solid var(--border-g);cursor:pointer;-webkit-tap-highlight-color:transparent;flex-shrink:0;}
-.app-nav-menu-av{width:100%;height:100%;object-fit:cover;}
-.app-nav-menu-ico{font-size:18px;}
+
+/* iPhone SE / маленькі телефони (до 375px) */
+@media(max-width:375px){
+  .mob-btn{font-size:8px;}
+  .mob-ico{font-size:20px;}
+  .post-txt{font-size:13px;}
+  #app-nav{padding:0 10px;}
+  #connectBtn{font-size:11px;padding:5px 8px;}
+  .hero-title{font-size:42px;}
+}
+
+/* iPad Pro / великі планшети (1024–1366px) */
+@media(min-width:1024px) and (max-width:1366px){
+  .app-layout{max-width:100%;grid-template-columns:220px 1fr 260px;}
+}
+
+/* Landscape мобільний */
+@media(max-width:767px) and (orientation:landscape){
+  .mob-nav{height:50px;}
+  .mob-btn{padding:4px;}
+  .mob-ico{font-size:18px;}
+  #page-app{padding-bottom:54px;}
+  #app-nav{height:48px;}
+  .app-layout{padding-top:48px;}
+}
+
+@media(max-width:680px){
+  #landing-nav{padding:0 14px;}
+  .nav-links{display:none;}
+  .section{padding:56px 14px;}
+  #hero{padding:76px 14px 44px;}
+  .hero-numbers{gap:20px;padding-top:28px;}
+  .hero-num{font-size:26px;}
+  footer{padding:32px 14px 20px;}
+  .hero-btns{flex-direction:column;align-items:center;}
+  .btn-gold,.btn-outline{width:100%;max-width:320px;text-align:center;}
+}
+
 </style>
 </head>
 <body>
@@ -456,28 +547,46 @@ textarea.form-inp{resize:vertical;min-height:80px;}
 
 <!-- WALLET SELECTION MODAL -->
 <div class="modal-overlay" id="walletModal">
-  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:20px;padding:32px;width:100%;max-width:380px;position:relative;">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:20px;padding:28px 24px;width:100%;max-width:360px;position:relative;">
     <button class="modal-close-btn" onclick="document.getElementById('walletModal').classList.remove('open')">✕</button>
-    <div style="font-size:20px;font-weight:700;margin-bottom:6px;">Connect Wallet</div>
-    <div style="font-size:13px;color:var(--muted);margin-bottom:24px;">Choose your wallet to continue</div>
+    <div style="text-align:center;margin-bottom:20px;">
+      <div style="font-size:22px;font-weight:700;margin-bottom:4px;">Підключити гаманець</div>
+      <div style="font-size:13px;color:var(--muted);">Обери спосіб підключення</div>
+    </div>
     <div style="display:flex;flex-direction:column;gap:10px;">
-      <button onclick="connectWithWallet('metamask')" style="display:flex;align-items:center;gap:14px;padding:14px 18px;background:var(--bg3);border:1px solid var(--border);border-radius:12px;cursor:pointer;transition:all .2s;text-align:left;width:100%;" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='var(--border)'">
-        <img src="https://upload.wikimedia.org/wikipedia/commons/3/36/MetaMask_Fox.svg" style="width:36px;height:36px;"/>
-        <div><div style="font-size:15px;font-weight:700;color:var(--text);">MetaMask</div><div style="font-size:12px;color:var(--muted);">Browser extension / mobile</div></div>
+
+      <!-- MetaMask — завжди показується, deeplink на мобільному -->
+      <button onclick="connectWithWallet('metamask')" style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--bg3);border:2px solid rgba(245,200,66,0.3);border-radius:14px;cursor:pointer;text-align:left;width:100%;-webkit-tap-highlight-color:transparent;">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/3/36/MetaMask_Fox.svg" style="width:40px;height:40px;flex-shrink:0;"/>
+        <div style="flex:1;">
+          <div style="font-size:15px;font-weight:700;color:var(--text);">MetaMask</div>
+          <div style="font-size:12px;color:var(--muted);" id="mmDesc">Підключити або відкрити в додатку</div>
+        </div>
+        <div style="font-size:18px;">→</div>
       </button>
-      <button onclick="connectWithWallet('trust')" style="display:flex;align-items:center;gap:14px;padding:14px 18px;background:var(--bg3);border:1px solid var(--border);border-radius:12px;cursor:pointer;transition:all .2s;text-align:left;width:100%;" onmouseover="this.style.borderColor='#3375BB'" onmouseout="this.style.borderColor='var(--border)'">
-        <img src="https://trustwallet.com/assets/images/media/assets/trust_platform.svg" style="width:36px;height:36px;border-radius:8px;" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 36 36%22><rect width=%2236%22 height=%2236%22 rx=%228%22 fill=%22%233375BB%22/><text y=%2226%22 x=%224%22 font-size=%2222%22>🛡</text></svg>'"/>
-        <div><div style="font-size:15px;font-weight:700;color:var(--text);">Trust Wallet</div><div style="font-size:12px;color:var(--muted);">Mobile &amp; browser wallet</div></div>
+
+      <!-- Trust Wallet -->
+      <button onclick="connectWithWallet('trust')" style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--bg3);border:2px solid rgba(51,117,187,0.3);border-radius:14px;cursor:pointer;text-align:left;width:100%;-webkit-tap-highlight-color:transparent;">
+        <div style="width:40px;height:40px;border-radius:10px;background:#3375BB;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;">🛡</div>
+        <div style="flex:1;">
+          <div style="font-size:15px;font-weight:700;color:var(--text);">Trust Wallet</div>
+          <div style="font-size:12px;color:var(--muted);">Підключити або відкрити в додатку</div>
+        </div>
+        <div style="font-size:18px;">→</div>
       </button>
-      <button onclick="connectWithWallet('injected')" style="display:flex;align-items:center;gap:14px;padding:14px 18px;background:var(--bg3);border:1px solid var(--border);border-radius:12px;cursor:pointer;transition:all .2s;text-align:left;width:100%;" onmouseover="this.style.borderColor='var(--muted)'" onmouseout="this.style.borderColor='var(--border)'">
-        <div style="width:36px;height:36px;border-radius:8px;background:var(--bg2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:20px;">🔗</div>
-        <div><div style="font-size:15px;font-weight:700;color:var(--text);">Other Wallet</div><div style="font-size:12px;color:var(--muted);">Any injected Web3 wallet</div></div>
+
+      <!-- Other -->
+      <button onclick="connectWithWallet('injected')" style="display:flex;align-items:center;gap:14px;padding:12px 16px;background:var(--bg3);border:1px solid var(--border);border-radius:14px;cursor:pointer;text-align:left;width:100%;-webkit-tap-highlight-color:transparent;">
+        <div style="width:40px;height:40px;border-radius:10px;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;">🔗</div>
+        <div>
+          <div style="font-size:14px;font-weight:600;color:var(--text);">Інший гаманець</div>
+          <div style="font-size:12px;color:var(--muted);">Будь-який Web3 гаманець</div>
+        </div>
       </button>
-      <!-- Mobile deeplink hint — shown only on mobile -->
-      <div id="mobileWalletHint" style="display:none;background:rgba(245,200,66,0.06);border:1px solid var(--border-g);border-radius:10px;padding:12px 14px;font-size:12px;color:var(--muted);line-height:1.7;">
-        📱 <b style="color:var(--gold);">На мобільному?</b> Відкрий сайт у браузері гаманця:<br>
-        <a onclick="connectWithWallet('metamask')" style="color:var(--gold);font-weight:700;display:inline-block;margin-top:6px;padding:8px 16px;background:rgba(245,200,66,0.1);border-radius:8px;cursor:pointer;">🦊 Відкрити в MetaMask</a>
-        <a onclick="connectWithWallet('trust')" style="color:#3375BB;font-weight:700;display:inline-block;margin-top:4px;padding:8px 16px;background:rgba(51,117,187,0.1);border-radius:8px;cursor:pointer;">🛡 Відкрити в Trust Wallet</a>
+
+      <!-- Info для мобільного -->
+      <div id="mobileWalletHint" style="display:none;background:rgba(245,200,66,0.05);border:1px solid var(--border-g);border-radius:10px;padding:12px;font-size:12px;color:var(--muted);line-height:1.6;text-align:center;">
+        📱 Натисни MetaMask або Trust Wallet вище — ми відкриємо сайт прямо в браузері додатку
       </div>
     </div>
   </div>
@@ -1776,20 +1885,37 @@ function scrollSec(id){ document.querySelector(id)?.scrollIntoView({behavior:'sm
 // ── WALLET (ethers v6) ──
 async function connectWithWallet(type){
   document.getElementById('walletModal').classList.remove('open');
+
+  // Helper: check if MetaMask is available
+  function hasMetaMask(){
+    if(window.ethereum?.isMetaMask) return true;
+    if(window.ethereum?.providers) return window.ethereum.providers.some(p=>p.isMetaMask);
+    return false;
+  }
+  function hasTrust(){
+    return !!(window.trustwallet||window.ethereum?.isTrust||window.ethereum?.isTrustWallet);
+  }
+
   if(type==='metamask'){
-    if(window.ethereum&&window.ethereum.isMetaMask){
+    if(hasMetaMask()){
+      // Pick MetaMask from providers array if multiple wallets
+      if(window.ethereum?.providers){
+        const mm=window.ethereum.providers.find(p=>p.isMetaMask);
+        if(mm) window.ethereum=mm;
+      }
       await connectWallet(); return;
     }
-    if(isMobile()){
-      // Correct MetaMask deeplink format
-      const url=window.location.href;
-      window.location.href='https://metamask.app.link/dapp/'+url.replace('https://','').replace('http://','');
-      return;
-    }
+    // MetaMask not in browser — deeplink to app
+    const pageUrl=window.location.href.replace(/^https?:\/\//,'');
+    window.location.href='https://metamask.app.link/dapp/'+pageUrl;
+    return;
   }
   if(type==='trust'){
-    if(window.trustwallet) window.ethereum=window.trustwallet;
-    else if(!window.ethereum&&isMobile()){
+    if(window.trustwallet){ window.ethereum=window.trustwallet; }
+    else if(window.ethereum?.providers){
+      const tw=window.ethereum.providers.find(p=>p.isTrust||p.isTrustWallet);
+      if(tw){ window.ethereum=tw; }
+    } else if(!hasTrust()){
       window.location.href='https://link.trustwallet.com/open_url?coin_id=60&url='+encodeURIComponent(window.location.href);
       return;
     }
@@ -1802,6 +1928,7 @@ async function connectWallet(){
     if(window.trustwallet) window.ethereum=window.trustwallet;
     else{
       document.getElementById('walletModal').classList.add('open');
+      // Always show mobile hint on mobile
       if(isMobile()){
         const h=document.getElementById('mobileWalletHint');
         if(h)h.style.display='block';
