@@ -4765,15 +4765,32 @@ async function loadMessages(){
   const el=document.getElementById('msgList');
   const {data:msgs}=await sb.from('messages').select('*').or('and(from_wallet.eq.'+userAddr+',to_wallet.eq.'+currentDMWallet+'),and(from_wallet.eq.'+currentDMWallet+',to_wallet.eq.'+userAddr+')').order('created_at',{ascending:true});
   if(!msgs||msgs.length===0){el.innerHTML='<div style="text-align:center;color:var(--muted);padding:40px;">No messages yet 👋</div>';return;}
-  const atBottom=(el.scrollHeight-el.scrollTop<=el.clientHeight+80)||(el.scrollHeight===0);
   el.innerHTML='';
-  msgs.forEach(function(m){
+  msgs.forEach(function(m,idx){
     const mine=m.from_wallet===userAddr;
+    const prev=msgs[idx-1];
+    const next=msgs[idx+1];
+    const sameAsPrev=prev&&prev.from_wallet===m.from_wallet;
+    const sameAsNext=next&&next.from_wallet===m.from_wallet;
+    // Group bubbles: first/middle/last in a sequence
+    const isFirst=!sameAsPrev;
+    const isLast=!sameAsNext;
+
     const wrap=document.createElement('div');
-    wrap.style.cssText='display:flex;justify-content:'+(mine?'flex-end':'flex-start')+';';
+    wrap.style.cssText='display:flex;justify-content:'+(mine?'flex-end':'flex-start')+';margin-bottom:'+(isLast?'8px':'2px')+';';
+
     const bubble=document.createElement('div');
-    bubble.style.cssText='max-width:70%;background:'+(mine?'var(--gold)':'var(--bg3)')+';color:'+(mine?'#08090C':'var(--text)')+';border-radius:'+(mine?'18px 18px 4px 18px':'18px 18px 18px 4px')+';padding:10px 14px;font-size:14px;line-height:1.5;';
+    // Rounded corners based on position in group
+    let radius;
+    if(mine){
+      radius=isFirst&&isLast?'18px 18px 4px 18px':isFirst?'18px 18px 4px 4px':isLast?'4px 18px 18px 4px':'4px 18px 18px 4px';
+    } else {
+      radius=isFirst&&isLast?'18px 18px 18px 4px':isFirst?'4px 18px 4px 4px':isLast?'4px 18px 18px 18px':'4px 18px 4px 4px';
+    }
+    bubble.style.cssText='max-width:75%;background:'+(mine?'var(--gold)':'var(--bg3)')+';color:'+(mine?'#08090C':'var(--text)')+';border-radius:'+radius+';padding:8px 12px;font-size:14px;line-height:1.5;word-break:break-word;';
+
     const txt=document.createElement('div');txt.textContent=m.content;bubble.appendChild(txt);
+
     if(!mine&&m.content.includes('challenges you to Battleship')){
       const btns=document.createElement('div');btns.style.cssText='display:flex;gap:6px;margin-top:8px;';
       const ab=document.createElement('button');ab.textContent='⚔️ Accept';ab.style.cssText='padding:6px 14px;background:var(--gold);color:#08090C;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:none;';
@@ -4782,10 +4799,16 @@ async function loadMessages(){
       db.onclick=(function(fw){return function(e){declineChallengeDM(fw,e);};})(m.from_wallet);
       btns.appendChild(ab);btns.appendChild(db);bubble.appendChild(btns);
     }
-    const timeEl=document.createElement('div');timeEl.style.cssText='font-size:10px;opacity:.6;margin-top:4px;text-align:'+(mine?'right':'left')+';';timeEl.textContent=tAgo(m.created_at);bubble.appendChild(timeEl);
+
+    // Show time only on last message of group
+    if(isLast){
+      const timeEl=document.createElement('div');
+      timeEl.style.cssText='font-size:10px;opacity:.5;margin-top:3px;text-align:'+(mine?'right':'left')+';';
+      timeEl.textContent=tAgo(m.created_at);
+      bubble.appendChild(timeEl);
+    }
     wrap.appendChild(bubble);el.appendChild(wrap);
   });
-  // Always scroll to bottom when loading messages
   setTimeout(function(){el.scrollTop=el.scrollHeight;},50);
 }
 async function sendDM(){if(!userAddr){showToast('Connect wallet first','err');return;}if(!currentDMWallet)return;const input=document.getElementById('msgInput');const content=input.value.trim();if(!content)return;input.value='';try{await sb.from('messages').insert({from_wallet:userAddr,to_wallet:currentDMWallet,content});await createNotif(currentDMWallet,'dm');loadMessages();}catch(e){showToast('Failed','err');input.value=content;}}
@@ -5595,12 +5618,14 @@ loadPassSupply();
 initDrawerSwipe();
 initInstallBtn();
 buildLangPicker();
-applyLang();
-// If starting on app page (e.g. PWA), show picker
-if(document.getElementById('page-app')&&document.getElementById('page-app').classList.contains('active')){
-  const lp=document.getElementById('langPicker');
-  if(lp)lp.style.display='flex';
-}
+// Apply lang after short delay to ensure DOM is fully rendered
+setTimeout(function(){ applyLang(); }, 100);
+// Re-apply when user opens app
+const _origOpenApp2=openApp;
+openApp=function(){
+  _origOpenApp2();
+  setTimeout(applyLang, 150);
+};
 let pwaPrompt=null;
 
 // PWA Install Banner
@@ -5630,14 +5655,19 @@ function showPWABanner(){
 
   const banner=document.createElement('div');
   banner.id='pwaBanner';
-  // Красивий дизайн — більший і помітніший
   banner.style.cssText=[
-    'position:fixed','bottom:72px','left:10px','right:10px',
+    'position:fixed',
+    'bottom:70px',
+    'left:10px',
+    'right:10px',
     'background:linear-gradient(135deg,#0E1018,#141720)',
     'border:1.5px solid rgba(245,200,66,0.5)',
-    'border-radius:18px','padding:16px','z-index:200',
-    'box-shadow:0 8px 32px rgba(0,0,0,.7),0 0 0 1px rgba(245,200,66,0.1)',
+    'border-radius:18px',
+    'padding:16px',
+    'z-index:300',
+    'box-shadow:0 8px 32px rgba(0,0,0,.8)',
     'animation:pwaSlide .35s cubic-bezier(.34,1.56,.64,1)',
+    'pointer-events:all',
   ].join(';');
 
   if(isAndroid && pwaPrompt){
@@ -5773,6 +5803,7 @@ async function _doConnect(addr){
   await ensureUser();
   updateDrawerUser();
   loadGateBal();loadPosts();updateNotifBadge();cleanupOldNotifications();loadRewardsPool();
+  setTimeout(applyLang, 300);
   setTimeout(function(){
     subscribeToConversations();
     updateUnreadBadge();
