@@ -1360,7 +1360,7 @@ textarea.form-inp{resize:vertical;min-height:80px;}
         </div>
 
         <!-- Listings grid -->
-        <div id="marketListings" style="padding:16px 20px;">
+        <div id="marketListings" style="padding:12px;">
           <div class="app-loader">Loading listings...</div>
         </div>
       </div>
@@ -1696,6 +1696,7 @@ textarea.form-inp{resize:vertical;min-height:80px;}
 
       <div style="padding:16px 12px 8px;">
         <button onclick="closeDrawer();goLanding()" style="width:100%;padding:10px;border-radius:10px;background:var(--bg3);border:1px solid var(--border);color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;">← Landing Page</button>
+        <button onclick="closeDrawer();installPWA()" id="drawerInstallBtn" style="display:none;width:100%;padding:10px;border-radius:10px;background:linear-gradient(135deg,rgba(245,200,66,0.15),rgba(38,217,138,0.08));border:1px solid var(--border-g);color:var(--gold);font-size:13px;font-weight:700;cursor:pointer;margin-top:8px;">📲 Встановити як додаток</button>
       </div>
     </div>
   </div>
@@ -4274,7 +4275,7 @@ async function loadMarketplace(){
     }
     document.getElementById('mktListings').textContent=active.length;
     const grid=document.createElement('div');
-    grid.style.cssText='display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;';
+    grid.style.cssText='display:grid;grid-template-columns:repeat(auto-fill,minmax(min(160px,45vw),1fr));gap:10px;';
     document.getElementById('marketListings').innerHTML='';
     document.getElementById('marketListings').appendChild(grid);
 
@@ -4298,7 +4299,9 @@ async function loadMarketplace(){
       const priceEth=parseFloat(ethers.formatEther(priceWei)).toFixed(4);
 
       const card=document.createElement('div');
-      card.style.cssText='background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;';
+      card.style.cssText='background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;transition:transform .15s;cursor:pointer;';
+      card.onmouseover=function(){this.style.transform='translateY(-2px)';};
+      card.onmouseout=function(){this.style.transform='none';};
       // Image
       const imgDiv=document.createElement('div');
       imgDiv.style.cssText='aspect-ratio:1;background:var(--bg3);overflow:hidden;position:relative;';
@@ -4307,7 +4310,6 @@ async function loadMarketplace(){
         im.loading='lazy';
         im.style.cssText='width:100%;height:100%;object-fit:cover;';
         im.alt=name;
-        // Try gateways in order until one works
         const _hash=img.includes('/ipfs/')?img.split('/ipfs/').pop():null;
         const _gateways=_hash?getIPFSGateways(_hash):[img];
         let _gwIdx=0;
@@ -4317,32 +4319,32 @@ async function loadMarketplace(){
           if(_gwIdx<_gateways.length){
             this.src=_gateways[_gwIdx];
           } else {
-            imgDiv.innerHTML='<div style="font-size:36px;display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);">🖼️</div>';
+            imgDiv.innerHTML='<div style="font-size:32px;display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);">🖼️</div>';
           }
         };
         imgDiv.appendChild(im);
       } else {
-        imgDiv.innerHTML='<div style="font-size:36px;display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);">🖼️</div>';
+        imgDiv.innerHTML='<div style="font-size:32px;display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);">🖼️</div>';
       }
-      // Info
+      // Info — компактний для мобільного
       const info=document.createElement('div');
-      info.style.cssText='padding:12px;';
-      info.innerHTML='<div style="font-size:13px;font-weight:700;margin-bottom:4px;">'+esc(name)+'</div>'
-        +'<div style="font-size:11px;color:var(--muted);margin-bottom:8px;">by '+sAddr(l.seller)+'</div>'
-        +'<div style="display:flex;align-items:center;justify-content:space-between;">'
-        +'<div style="font-family:monospace;font-size:14px;font-weight:700;color:var(--gold);">'+priceEth+' zkLTC</div>'
+      info.style.cssText='padding:8px 10px 10px;';
+      info.innerHTML=
+        '<div style="font-size:12px;font-weight:700;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(name)+'</div>'
+        +'<div style="font-size:10px;color:var(--muted);margin-bottom:6px;">'+sAddr(l.seller)+'</div>'
+        +'<div style="display:flex;align-items:center;justify-content:space-between;gap:4px;">'
+        +'<div style="font-family:monospace;font-size:12px;font-weight:700;color:var(--gold);">'+priceEth+'<span style="font-size:10px;color:var(--muted);"> zkLTC</span></div>'
         +'</div>';
-      // Button
       const btnWrap=info.querySelector('div:last-child');
       const btn=document.createElement('button');
       if(isOwn){
-        btn.textContent='Cancel';
-        btn.style.cssText='background:var(--bg3);border:1px solid var(--border);color:var(--red);border-radius:8px;padding:6px 10px;font-size:11px;cursor:pointer;';
-        btn.onclick=(function(idx){return function(){cancelNFTListing(idx);};})(listingIdx);
+        btn.textContent='✕ Cancel';
+        btn.style.cssText='background:rgba(255,77,77,0.1);border:1px solid rgba(255,77,77,.3);color:var(--red);border-radius:6px;padding:4px 8px;font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;';
+        btn.onclick=(function(idx){return function(e){e.stopPropagation();cancelNFTListing(idx);};})(listingIdx);
       } else {
         btn.textContent='Buy';
-        btn.style.cssText='background:var(--gold);color:#08090C;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;';
-        btn.onclick=(function(idx,pw){return function(){buyNFT(idx,pw);};})(listingIdx,priceWei);
+        btn.style.cssText='background:var(--gold);color:#08090C;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;';
+        btn.onclick=(function(idx,pw){return function(e){e.stopPropagation();buyNFT(idx,pw);};})(listingIdx,priceWei);
       }
       btnWrap.appendChild(btn);
       card.appendChild(imgDiv);card.appendChild(info);
@@ -5008,6 +5010,46 @@ function closeDrawer(){
   document.getElementById('drawerOverlay').classList.remove('open');
   document.body.style.overflow='';
 }
+
+// Swipe LEFT on drawer → close. Swipe RIGHT → ignored.
+function initDrawerSwipe(){
+  var drawer=document.getElementById('drawer');
+  if(!drawer)return;
+  var sx=0,sy=0,active=false;
+
+  drawer.addEventListener('touchstart',function(e){
+    sx=e.touches[0].clientX;
+    sy=e.touches[0].clientY;
+    active=true;
+  },{passive:true});
+
+  drawer.addEventListener('touchmove',function(e){
+    if(!active)return;
+    var dx=e.touches[0].clientX-sx;
+    var dy=Math.abs(e.touches[0].clientY-sy);
+    if(dx<0&&dy<Math.abs(dx)){
+      // Horizontal left swipe — move drawer
+      var move=Math.max(dx,-280);
+      drawer.style.transition='none';
+      drawer.style.transform='translateX('+move+'px)';
+    }
+  },{passive:true});
+
+  function onEnd(e){
+    if(!active)return;
+    active=false;
+    var dx=(e.changedTouches[0]||e.touches[0]).clientX-sx;
+    drawer.style.transition='';
+    drawer.style.transform='';
+    if(dx<-60) closeDrawer();
+  }
+  drawer.addEventListener('touchend',onEnd,{passive:true});
+  drawer.addEventListener('touchcancel',function(){
+    active=false;
+    drawer.style.transition='';
+    drawer.style.transform='';
+  },{passive:true});
+}
 function updateDrawerUser(){
   const av=document.getElementById('drawerAv');
   const nm=document.getElementById('drawerName');
@@ -5276,11 +5318,23 @@ function buildLangPicker(){
   }
 
   document.addEventListener('touchstart',function(e){
+    // Only trigger on Feed tab
     var fv=document.getElementById('view-feed');
     if(!fv||fv.style.display==='none')return;
     var ap=document.getElementById('page-app');
     if(!ap||!ap.classList.contains('active'))return;
-    if(window.scrollY>5)return;
+    // Must be scrolled to very top
+    if(window.scrollY>2)return;
+    // Don't trigger if touching inside a scrollable element (profile, drawer, modal)
+    var target=e.target;
+    while(target&&target!==document.body){
+      if(target.id==='drawer'||target.classList.contains('modal-overlay')||
+         target.id==='view-profile'||target.id==='msgList'||
+         target.id==='convListItems'||target.id==='notifsList'){
+        return;
+      }
+      target=target.parentElement;
+    }
     startY=e.touches[0].clientY;
     pulling=true;
   },{passive:true});
@@ -5371,7 +5425,7 @@ document.querySelectorAll('.fade').forEach(el=>obs.observe(el));
 const sObs=new IntersectionObserver(e=>e.forEach(x=>{if(x.isIntersecting)x.target.querySelectorAll('.supply-fill[data-target]').forEach(b=>{setTimeout(()=>b.style.width=b.dataset.target,300)});}),{threshold:0.2});
 document.querySelectorAll('.pass-card').forEach(c=>sObs.observe(c));
 loadPassSupply();
-// Init lang + lang picker
+initDrawerSwipe();
 buildLangPicker();
 applyLang();
 // If starting on app page (e.g. PWA), show picker
@@ -5380,8 +5434,79 @@ if(document.getElementById('page-app')&&document.getElementById('page-app').clas
   if(lp)lp.style.display='flex';
 }
 let pwaPrompt=null;
-window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();pwaPrompt=e;const btn=document.getElementById('pwaInstallBtn');if(btn)btn.style.display='block';});
-async function installPWA(){if(!pwaPrompt)return;pwaPrompt.prompt();const result=await pwaPrompt.userChoice;if(result.outcome==='accepted')document.getElementById('pwaInstallBtn').style.display='none';pwaPrompt=null;}
+
+// PWA Install Banner
+function showPWABanner(){
+  if(localStorage.getItem('og_pwa_dismissed')) return;
+  if(window.matchMedia('(display-mode: standalone)').matches) return; // Already installed
+  if(navigator.standalone) return; // iOS already installed
+
+  const existing=document.getElementById('pwaBanner');
+  if(existing) return;
+
+  const banner=document.createElement('div');
+  banner.id='pwaBanner';
+  banner.style.cssText='position:fixed;bottom:68px;left:12px;right:12px;background:var(--bg2);border:1px solid var(--border-g);border-radius:16px;padding:14px 16px;z-index:95;display:flex;align-items:center;gap:12px;box-shadow:0 4px 20px rgba(0,0,0,.5);animation:slideUp .3s ease;';
+
+  const isIOS=/iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const isAndroid=/Android/i.test(navigator.userAgent);
+
+  if(isIOS){
+    banner.innerHTML=`
+      <img src="/icon-192.png" style="width:44px;height:44px;border-radius:10px;flex-shrink:0;"/>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:700;color:var(--text);">Встанови OpenGate</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px;">Натисни <b style="color:var(--gold);">⎙ Поділитись</b> → <b style="color:var(--gold);">На екран «Додому»</b></div>
+      </div>
+      <button onclick="document.getElementById('pwaBanner').remove();localStorage.setItem('og_pwa_dismissed','1')" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px;flex-shrink:0;">✕</button>
+    `;
+    document.body.appendChild(banner);
+  } else if(isAndroid && pwaPrompt){
+    banner.innerHTML=`
+      <img src="/icon-192.png" style="width:44px;height:44px;border-radius:10px;flex-shrink:0;"/>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:700;color:var(--text);">Встанови як додаток</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px;">Без браузерного UI, як нативний додаток</div>
+      </div>
+      <button onclick="installPWA()" style="background:var(--gold);color:#08090C;border:none;border-radius:9px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;">Встановити</button>
+      <button onclick="document.getElementById('pwaBanner').remove();localStorage.setItem('og_pwa_dismissed','1')" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px 0 4px 4px;flex-shrink:0;">✕</button>
+    `;
+    document.body.appendChild(banner);
+  }
+}
+
+window.addEventListener('beforeinstallprompt',e=>{
+  e.preventDefault();
+  pwaPrompt=e;
+  const btn=document.getElementById('pwaInstallBtn');
+  if(btn)btn.style.display='block';
+  const dbtn=document.getElementById('drawerInstallBtn');
+  if(dbtn)dbtn.style.display='block';
+  // Show banner after 3 seconds
+  setTimeout(showPWABanner, 3000);
+});
+
+// iOS — show banner after 5 seconds if in browser
+if(/iPhone|iPad|iPod/i.test(navigator.userAgent) && !navigator.standalone){
+  setTimeout(showPWABanner, 5000);
+}
+
+async function installPWA(){
+  if(!pwaPrompt)return;
+  pwaPrompt.prompt();
+  const result=await pwaPrompt.userChoice;
+  if(result.outcome==='accepted'){
+    document.getElementById('pwaInstallBtn').style.display='none';
+    const b=document.getElementById('pwaBanner');
+    if(b)b.remove();
+  }
+  pwaPrompt=null;
+}
+
+// Add slideUp animation
+const pwaStyle=document.createElement('style');
+pwaStyle.textContent='@keyframes slideUp{from{transform:translateY(20px);opacity:0;}to{transform:translateY(0);opacity:1;}}';
+document.head.appendChild(pwaStyle);
 loadPosts();
 // wallet events handled in tryAutoConnect block below
 async function tryAutoConnect(){
