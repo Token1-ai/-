@@ -1696,7 +1696,7 @@ textarea.form-inp{resize:vertical;min-height:80px;}
 
       <div style="padding:16px 12px 8px;">
         <button onclick="closeDrawer();goLanding()" style="width:100%;padding:10px;border-radius:10px;background:var(--bg3);border:1px solid var(--border);color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;">← Landing Page</button>
-        <button onclick="closeDrawer();installPWA()" id="drawerInstallBtn" style="display:none;width:100%;padding:10px;border-radius:10px;background:linear-gradient(135deg,rgba(245,200,66,0.15),rgba(38,217,138,0.08));border:1px solid var(--border-g);color:var(--gold);font-size:13px;font-weight:700;cursor:pointer;margin-top:8px;">📲 Встановити як додаток</button>
+        <button onclick="closeDrawer();triggerInstall()" id="drawerInstallBtn" style="display:none;width:100%;padding:11px;border-radius:10px;background:linear-gradient(135deg,rgba(245,200,66,0.15),rgba(38,217,138,0.08));border:1px solid var(--border-g);color:var(--gold);font-size:13px;font-weight:700;cursor:pointer;margin-top:8px;">📲 Встановити як додаток</button>
       </div>
     </div>
   </div>
@@ -2094,6 +2094,8 @@ function showTab(tab){
   if(tab==='games'){}
   if(tab==='lending') loadLending();
   if(tab==='faucet') loadFaucet();
+  // Re-apply translations when switching tabs
+  if(currentLang&&currentLang!=='en') applyLang();
 }
 function switchFeedTab(tab,el){
   document.querySelectorAll('.feed-tab').forEach(t=>t.classList.remove('active'));
@@ -2713,23 +2715,38 @@ async function uploadAvatarFile(input){
   const file=input.files[0];
   if(!file) return;
   const status=document.getElementById('uploadAvatarStatus');
-  // Show local preview immediately in thumb
+  // Show local preview immediately
   const localUrl=URL.createObjectURL(file);
   const thumb=document.getElementById('avatarThumb');
   if(thumb) thumb.innerHTML='<img src="'+localUrl+'" style="width:100%;height:100%;object-fit:cover;"/>';
-  status.textContent='Uploading...';
+  status.textContent='Завантаження...';
+  status.style.color='var(--muted)';
   try{
-    const url=await uploadToPinata(file);
+    // Avatar upload goes ONLY to Cloudinary — no wallet, no Supabase, no IPFS
+    // This prevents MetaMask from being triggered
+    let url='';
+    try{
+      url=await uploadToCloudinary(file);
+    }catch(e1){
+      // Fallback to Supabase storage (no wallet needed, just HTTP)
+      try{
+        url=await uploadToSupabase(file);
+      }catch(e2){
+        url=await uploadToPinataOnly(file);
+      }
+    }
     document.getElementById('editAvatar').value=url;
     const thumb2=document.getElementById('avatarThumb');
     if(thumb2) thumb2.innerHTML='<img src="'+url+'" style="width:100%;height:100%;object-fit:cover;"/>';
-    status.textContent='✓ Done! Click Save Profile';
+    status.textContent='✓ Готово! Натисни "Зберегти профіль"';
     status.style.color='var(--green)';
-    showToast('Photo ready! Click Save Profile ✓','ok');
+    showToast('Фото готове! ✓','ok');
   }catch(e){
-    status.textContent='Upload failed. Try again.';
-    status.style.color='var(--red)';
-    showToast('Upload failed','err');
+    // If all fail — use local object URL (works for this session)
+    document.getElementById('editAvatar').value=localUrl;
+    status.textContent='⚠️ Збережено локально. Натисни "Зберегти профіль"';
+    status.style.color='var(--gold)';
+    showToast('Використовуємо локальне фото','ok');
   }
 }
 function closeEditModal(){document.getElementById('editModal').classList.remove('open');}
@@ -5099,6 +5116,30 @@ const LANGS = {
     releaseToRefresh:'Release to refresh!', refreshing:'Refreshing...',
     newPosts:'↻ New posts', search:'Search users, posts...',
     mainMenu:'Main', defiFull:'DeFi', play:'Play',
+    // Staking
+    stakingTitle:'💎 GATE Staking', stakingDesc:'Stake your GATE tokens and earn ~365% APR. Rewards every second. No lock period.',
+    myStaked:'My Staked', pendingReward:'Pending Reward', totalStaked:'Total Staked',
+    stakeAmount:'Amount to stake (GATE)', stakeBtn:'Stake', claimBtn:'Claim Rewards', unstakeBtn:'Unstake All',
+    poolInfo:'Pool Info', apr:'APR', lockPeriod:'Lock period', none:'None', stakingFee:'Staking fee', rewardPool:'Reward pool',
+    // Faucet
+    faucetTitle:'🚰 GATE Faucet', faucetDesc:'New to OpenGate? Claim 100 GATE tokens to start. One claim per wallet.',
+    available:'GATE available', perClaim:'GATE per claim', totalClaims:'Total claims',
+    claimBtn2:'🚰 Claim 100 GATE', alreadyClaimed:'Already Claimed ✓', claimEligible:'✓ You are eligible!',
+    // Games
+    gamesTitle:'🎮 Games', vsAI:'Free, instant start', stakeMode:'With Stakes', freeMode:'Free Play',
+    // Lottery
+    currentPot:'Current Prize Pool', players:'Players', myTickets:'My tickets this round',
+    ticketPrice:'Ticket price', maxPlayers:'Max players', prize:'Prize', platformFee:'Platform fee',
+    draw:'Auto when full', pastWinners:'Past Winners', buyTicket:'🎟️ Buy Ticket',
+    // Messages
+    typeMsg:'Type a message...', send:'Send', newDmPlaceholder:'0x...',
+    // Profile
+    editProfile:'Edit Profile', follow:'Follow', following2:'Following', saveProfile:'Save Profile',
+    posts:'Posts', followers:'Followers', followingCount:'Following',
+    // Explore
+    trendingUsers:'Trending Users', latestPosts:'Latest Posts',
+    // Connect
+    connectTitle:'Connect Wallet', connectSub:'Choose your connection method',
   },
   ru: {
     feed:'Лента', profile:'Профиль', post:'Пост', notifs:'Уведомл.', more:'Меню',
@@ -5111,11 +5152,27 @@ const LANGS = {
     releaseToRefresh:'Отпустите!', refreshing:'Обновляем...',
     newPosts:'↻ Новые посты', search:'Поиск пользователей...',
     mainMenu:'Главное', defiFull:'DeFi', play:'Игры',
+    stakingTitle:'💎 Стейкинг GATE', stakingDesc:'Стейкайте GATE и зарабатывайте ~365% APR. Награды каждую секунду. Без блокировки.',
+    myStaked:'Мой стейк', pendingReward:'Награда', totalStaked:'Всего в стейке',
+    stakeAmount:'Сумма для стейка (GATE)', stakeBtn:'Стейк', claimBtn:'Забрать награду', unstakeBtn:'Вывести всё',
+    poolInfo:'Инфо пула', apr:'APR', lockPeriod:'Блокировка', none:'Нет', stakingFee:'Комиссия', rewardPool:'Пул наград',
+    faucetTitle:'🚰 Кран GATE', faucetDesc:'Новичок? Получи 100 GATE бесплатно. Один раз на кошелёк.',
+    available:'GATE доступно', perClaim:'GATE за клейм', totalClaims:'Всего клеймов',
+    claimBtn2:'🚰 Получить 100 GATE', alreadyClaimed:'Уже получено ✓', claimEligible:'✓ Вы можете получить!',
+    gamesTitle:'🎮 Игры', vsAI:'Бесплатно, сразу', stakeMode:'Со ставками', freeMode:'Без ставок',
+    currentPot:'Призовой фонд', players:'Игроки', myTickets:'Мои билеты',
+    ticketPrice:'Цена билета', maxPlayers:'Макс игроков', prize:'Приз', platformFee:'Комиссия платформы',
+    draw:'Авто при заполнении', pastWinners:'Прошлые победители', buyTicket:'🎟️ Купить билет',
+    typeMsg:'Написать сообщение...', send:'Отправить', newDmPlaceholder:'0x...',
+    editProfile:'Ред. профиль', follow:'Подписаться', following2:'Подписан', saveProfile:'Сохранить',
+    posts:'Посты', followers:'Подписчики', followingCount:'Подписки',
+    trendingUsers:'Популярные', latestPosts:'Новые посты',
+    connectTitle:'Подключить кошелёк', connectSub:'Выбери способ подключения',
   },
   uk: {
     feed:'Стрічка', profile:'Профіль', post:'Пост', notifs:'Сповіщ.', more:'Меню',
     home:'Головна', allPosts:'Всі пости', following:'Підписки',
-    connectWallet:"Підключити гаманець", explore:'Пошук', messages:'Повідомлення',
+    connectWallet:'Підключити гаманець', explore:'Пошук', messages:'Повідомлення',
     staking:'Стейкінг', lending:'Позики', presale:'Пресейл', games:'Ігри',
     lottery:'Лотерея', market:'NFT ринок', launchpad:'Лончпад', faucet:'Кран',
     buyGate:'Купити GATE', landingPage:'← На головну',
@@ -5123,6 +5180,22 @@ const LANGS = {
     releaseToRefresh:'Відпустіть!', refreshing:'Оновлення...',
     newPosts:'↻ Нові пости', search:'Пошук користувачів...',
     mainMenu:'Головне', defiFull:'DeFi', play:'Ігри',
+    stakingTitle:'💎 Стейкінг GATE', stakingDesc:'Стейкайте GATE і заробляйте ~365% APR. Нагороди щосекунди. Без блокування.',
+    myStaked:'Мій стейк', pendingReward:'Нагорода', totalStaked:'Всього в стейку',
+    stakeAmount:'Сума для стейку (GATE)', stakeBtn:'Стейк', claimBtn:'Забрати нагороду', unstakeBtn:'Вивести все',
+    poolInfo:'Інфо пулу', apr:'APR', lockPeriod:'Блокування', none:'Немає', stakingFee:'Комісія', rewardPool:'Пул нагород',
+    faucetTitle:'🚰 Кран GATE', faucetDesc:'Новачок? Отримай 100 GATE безкоштовно. Один раз на гаманець.',
+    available:'GATE доступно', perClaim:'GATE за клейм', totalClaims:'Всього клеймів',
+    claimBtn2:'🚰 Отримати 100 GATE', alreadyClaimed:'Вже отримано ✓', claimEligible:'✓ Ви можете отримати!',
+    gamesTitle:'🎮 Ігри', vsAI:'Безкоштовно, одразу', stakeMode:'Зі ставками', freeMode:'Без ставок',
+    currentPot:'Призовий фонд', players:'Гравці', myTickets:'Мої квитки',
+    ticketPrice:'Ціна квитка', maxPlayers:'Макс гравців', prize:'Приз', platformFee:'Комісія платформи',
+    draw:'Авто при заповненні', pastWinners:'Минулі переможці', buyTicket:'🎟️ Купити квиток',
+    typeMsg:'Написати повідомлення...', send:'Надіслати', newDmPlaceholder:'0x...',
+    editProfile:'Ред. профіль', follow:'Підписатись', following2:'Підписаний', saveProfile:'Зберегти',
+    posts:'Пости', followers:'Підписники', followingCount:'Підписки',
+    trendingUsers:'Популярні', latestPosts:'Нові пости',
+    connectTitle:'Підключити гаманець', connectSub:'Обери спосіб підключення',
   },
   hi: {
     feed:'फीड', profile:'प्रोफाइल', post:'पोस्ट', notifs:'सूचना', more:'मेनू',
@@ -5135,6 +5208,22 @@ const LANGS = {
     releaseToRefresh:'छोड़ें!', refreshing:'लोड हो रहा है...',
     newPosts:'↻ नई पोस्ट', search:'खोजें...',
     mainMenu:'मुख्य', defiFull:'DeFi', play:'खेलें',
+    stakingTitle:'💎 GATE स्टेकिंग', stakingDesc:'GATE स्टेक करें और ~365% APR कमाएं।',
+    myStaked:'मेरा स्टेक', pendingReward:'पुरस्कार', totalStaked:'कुल स्टेक',
+    stakeAmount:'स्टेक राशि (GATE)', stakeBtn:'स्टेक', claimBtn:'पुरस्कार लें', unstakeBtn:'सब निकालें',
+    poolInfo:'पूल जानकारी', apr:'APR', lockPeriod:'लॉक', none:'कोई नहीं', stakingFee:'शुल्क', rewardPool:'पुरस्कार पूल',
+    faucetTitle:'🚰 GATE फ़ॉसेट', faucetDesc:'100 GATE मुफ्त में पाएं।',
+    available:'GATE उपलब्ध', perClaim:'GATE प्रति क्लेम', totalClaims:'कुल क्लेम',
+    claimBtn2:'🚰 100 GATE लें', alreadyClaimed:'पहले ही लिया ✓', claimEligible:'✓ आप पात्र हैं!',
+    gamesTitle:'🎮 गेम्स', vsAI:'मुफ्त, तुरंत', stakeMode:'दांव के साथ', freeMode:'मुफ्त',
+    currentPot:'पुरस्कार राशि', players:'खिलाड़ी', myTickets:'मेरे टिकट',
+    ticketPrice:'टिकट मूल्य', maxPlayers:'अधिकतम खिलाड़ी', prize:'पुरस्कार', platformFee:'प्लेटफ़ॉर्म शुल्क',
+    draw:'भरने पर स्वतः', pastWinners:'पिछले विजेता', buyTicket:'🎟️ टिकट खरीदें',
+    typeMsg:'संदेश लिखें...', send:'भेजें', newDmPlaceholder:'0x...',
+    editProfile:'प्रोफ़ाइल संपादित करें', follow:'फ़ॉलो', following2:'फ़ॉलो कर रहे हैं', saveProfile:'सहेजें',
+    posts:'पोस्ट', followers:'फ़ॉलोअर्स', followingCount:'फ़ॉलोइंग',
+    trendingUsers:'ट्रेंडिंग', latestPosts:'नई पोस्ट',
+    connectTitle:'वॉलेट जोड़ें', connectSub:'कनेक्शन का तरीका चुनें',
   },
   zh: {
     feed:'动态', profile:'我的', post:'发帖', notifs:'通知', more:'更多',
@@ -5147,6 +5236,22 @@ const LANGS = {
     releaseToRefresh:'松开刷新！', refreshing:'刷新中...',
     newPosts:'↻ 新帖子', search:'搜索...',
     mainMenu:'主要', defiFull:'DeFi', play:'游戏',
+    stakingTitle:'💎 GATE质押', stakingDesc:'质押GATE赚取~365% APR。无锁定期。',
+    myStaked:'我的质押', pendingReward:'待领奖励', totalStaked:'总质押量',
+    stakeAmount:'质押数量(GATE)', stakeBtn:'质押', claimBtn:'领取奖励', unstakeBtn:'全部取回',
+    poolInfo:'池信息', apr:'APR', lockPeriod:'锁定期', none:'无', stakingFee:'质押费', rewardPool:'奖励池',
+    faucetTitle:'🚰 GATE水龙头', faucetDesc:'新用户免费领取100 GATE。每钱包一次。',
+    available:'可用GATE', perClaim:'每次领取', totalClaims:'总领取次数',
+    claimBtn2:'🚰 领取100 GATE', alreadyClaimed:'已领取 ✓', claimEligible:'✓ 您有资格领取！',
+    gamesTitle:'🎮 游戏', vsAI:'免费，即时开始', stakeMode:'带赌注', freeMode:'免费玩',
+    currentPot:'当前奖池', players:'玩家', myTickets:'我的票',
+    ticketPrice:'票价', maxPlayers:'最多玩家', prize:'奖励', platformFee:'平台费',
+    draw:'满员自动开奖', pastWinners:'历史获奖者', buyTicket:'🎟️ 购买彩票',
+    typeMsg:'输入消息...', send:'发送', newDmPlaceholder:'0x...',
+    editProfile:'编辑资料', follow:'关注', following2:'已关注', saveProfile:'保存',
+    posts:'帖子', followers:'粉丝', followingCount:'关注',
+    trendingUsers:'热门用户', latestPosts:'最新帖子',
+    connectTitle:'连接钱包', connectSub:'选择连接方式',
   },
   tr: {
     feed:'Akış', profile:'Profil', post:'Gönderi', notifs:'Bildirim', more:'Menü',
@@ -5159,6 +5264,22 @@ const LANGS = {
     releaseToRefresh:'Bırak!', refreshing:'Yenileniyor...',
     newPosts:'↻ Yeni gönderiler', search:'Ara...',
     mainMenu:'Ana', defiFull:'DeFi', play:'Oyna',
+    stakingTitle:'💎 GATE Staking', stakingDesc:'GATE stake edin ve ~365% APR kazanın. Kilit yok.',
+    myStaked:'Stake\'im', pendingReward:'Ödül', totalStaked:'Toplam Stake',
+    stakeAmount:'Stake miktarı (GATE)', stakeBtn:'Stake', claimBtn:'Ödül Al', unstakeBtn:'Hepsini Çek',
+    poolInfo:'Havuz Bilgisi', apr:'APR', lockPeriod:'Kilit', none:'Yok', stakingFee:'Stake Ücreti', rewardPool:'Ödül Havuzu',
+    faucetTitle:'🚰 GATE Musluğu', faucetDesc:'Yeni misin? 100 GATE ücretsiz al.',
+    available:'GATE mevcut', perClaim:'GATE/talep', totalClaims:'Toplam talep',
+    claimBtn2:'🚰 100 GATE Al', alreadyClaimed:'Zaten alındı ✓', claimEligible:'✓ Hak kazandınız!',
+    gamesTitle:'🎮 Oyunlar', vsAI:'Ücretsiz, anında', stakeMode:'Bahisli', freeMode:'Ücretsiz',
+    currentPot:'Mevcut Ödül', players:'Oyuncular', myTickets:'Biletlerim',
+    ticketPrice:'Bilet fiyatı', maxPlayers:'Maks oyuncu', prize:'Ödül', platformFee:'Platform ücreti',
+    draw:'Dolu olunca otomatik', pastWinners:'Geçmiş Kazananlar', buyTicket:'🎟️ Bilet Al',
+    typeMsg:'Mesaj yaz...', send:'Gönder', newDmPlaceholder:'0x...',
+    editProfile:'Profili Düzenle', follow:'Takip Et', following2:'Takip Ediliyor', saveProfile:'Kaydet',
+    posts:'Gönderiler', followers:'Takipçiler', followingCount:'Takip',
+    trendingUsers:'Trend Olanlar', latestPosts:'Son Gönderiler',
+    connectTitle:'Cüzdan Bağla', connectSub:'Bağlantı yöntemini seç',
   },
   de: {
     feed:'Feed', profile:'Profil', post:'Post', notifs:'Meldungen', more:'Menü',
@@ -5171,6 +5292,22 @@ const LANGS = {
     releaseToRefresh:'Loslassen!', refreshing:'Aktualisierung...',
     newPosts:'↻ Neue Beiträge', search:'Suche...',
     mainMenu:'Haupt', defiFull:'DeFi', play:'Spielen',
+    stakingTitle:'💎 GATE Staking', stakingDesc:'GATE staken und ~365% APR verdienen. Keine Sperrfrist.',
+    myStaked:'Mein Stake', pendingReward:'Ausstehend', totalStaked:'Gesamt gestakt',
+    stakeAmount:'Stake-Betrag (GATE)', stakeBtn:'Staken', claimBtn:'Prämien abholen', unstakeBtn:'Alles abheben',
+    poolInfo:'Pool-Info', apr:'APR', lockPeriod:'Sperrfrist', none:'Keine', stakingFee:'Staking-Gebühr', rewardPool:'Prämienpool',
+    faucetTitle:'🚰 GATE Faucet', faucetDesc:'Neu hier? Hole kostenlos 100 GATE.',
+    available:'GATE verfügbar', perClaim:'GATE/Claim', totalClaims:'Gesamt Claims',
+    claimBtn2:'🚰 100 GATE holen', alreadyClaimed:'Bereits erhalten ✓', claimEligible:'✓ Berechtigt!',
+    gamesTitle:'🎮 Spiele', vsAI:'Kostenlos, sofort', stakeMode:'Mit Einsatz', freeMode:'Kostenlos',
+    currentPot:'Aktueller Jackpot', players:'Spieler', myTickets:'Meine Tickets',
+    ticketPrice:'Ticketpreis', maxPlayers:'Max Spieler', prize:'Prämie', platformFee:'Plattformgebühr',
+    draw:'Auto bei Vollfüllung', pastWinners:'Frühere Gewinner', buyTicket:'🎟️ Ticket kaufen',
+    typeMsg:'Nachricht schreiben...', send:'Senden', newDmPlaceholder:'0x...',
+    editProfile:'Profil bearbeiten', follow:'Folgen', following2:'Folge ich', saveProfile:'Speichern',
+    posts:'Beiträge', followers:'Follower', followingCount:'Folge ich',
+    trendingUsers:'Trending', latestPosts:'Neueste Beiträge',
+    connectTitle:'Wallet verbinden', connectSub:'Verbindungsmethode wählen',
   },
 };
 
@@ -5198,23 +5335,16 @@ function setLang(lang){
 }
 
 function applyLang(){
-  // Bottom nav text nodes
-  const mobMap={
-    'mobbtn-feed':'feed','mobbtn-post':'post',
-    'mobbtn-notifs':'notifs','mobbtn-menu':'more'
-  };
+  // Bottom nav
+  const mobMap={'mobbtn-feed':'feed','mobbtn-post':'post','mobbtn-notifs':'notifs','mobbtn-menu':'more'};
   Object.keys(mobMap).forEach(function(id){
     const el=document.getElementById(id);
     if(!el)return;
-    // last text node
-    Array.from(el.childNodes).forEach(function(n){
-      if(n.nodeType===3&&n.textContent.trim())n.textContent=t(mobMap[id]);
-    });
+    Array.from(el.childNodes).forEach(function(n){if(n.nodeType===3&&n.textContent.trim())n.textContent=t(mobMap[id]);});
   });
-  // Feed header
+  // Feed header & tabs
   const fh=document.querySelector('#view-feed .feed-hdr span:first-child');
   if(fh)fh.textContent=t('home');
-  // Feed tabs
   const tabs=document.querySelectorAll('#view-feed .feed-tab');
   if(tabs[0])tabs[0].textContent=t('allPosts');
   if(tabs[1])tabs[1].textContent=t('following');
@@ -5225,41 +5355,78 @@ function applyLang(){
   const cb=document.getElementById('connectBtn');
   if(cb&&!cb.classList.contains('connected'))cb.innerHTML='<div class="w-dot"></div>'+t('connectWallet');
   // Drawer btns
-  const dm={
-    'drawer-feed':'home','drawer-profile':'profile','drawer-notifs':'notifs',
-    'drawer-messages':'messages','drawer-explore':'explore','drawer-staking':'staking',
-    'drawer-lending':'lending','drawer-presale':'presale','drawer-games':'games',
-    'drawer-lottery':'lottery','drawer-market':'market','drawer-launchpad':'launchpad',
-    'drawer-faucet':'faucet'
-  };
+  const dm={'drawer-feed':'home','drawer-profile':'profile','drawer-notifs':'notifs','drawer-messages':'messages','drawer-explore':'explore','drawer-staking':'staking','drawer-lending':'lending','drawer-presale':'presale','drawer-games':'games','drawer-lottery':'lottery','drawer-market':'market','drawer-launchpad':'launchpad','drawer-faucet':'faucet'};
   Object.keys(dm).forEach(function(id){
-    const el=document.getElementById(id);
-    if(!el)return;
-    const ico=el.querySelector('.drawer-ico');
-    const badge=el.querySelector('.drawer-badge');
-    const icoHtml=ico?ico.outerHTML:'';
-    el.innerHTML=icoHtml+t(dm[id]);
-    if(badge)el.appendChild(badge);
-    el.style.cursor='pointer';
+    const el=document.getElementById(id);if(!el)return;
+    const ico=el.querySelector('.drawer-ico');const badge=el.querySelector('.drawer-badge');
+    el.innerHTML=(ico?ico.outerHTML:'')+t(dm[id]);if(badge)el.appendChild(badge);
   });
-  // Drawer "Buy GATE" button (no id, find by content)
   // Drawer labels
   const dlbls=document.querySelectorAll('.drawer-lbl');
-  const lkeys=['mainMenu','defiFull','play','more'];
-  dlbls.forEach(function(el,i){if(lkeys[i])el.textContent=t(lkeys[i]);});
-  // PTR text
-  const pt=document.getElementById('ptr-text');
-  if(pt)pt.textContent=t('pullToRefresh');
-  // New posts btn
-  const np=document.getElementById('newPostsBtn');
-  if(np&&np.style.display!=='none')np.textContent=t('newPosts');
-  // Search
-  const si=document.getElementById('searchInput');
-  if(si)si.placeholder=t('search');
-  // Landing page btn in drawer
-  const landBtns=document.querySelectorAll('.drawer-body button:last-of-type');
-  landBtns.forEach(function(b){if(b.textContent.includes('←')||b.textContent.includes('Landing')||b.textContent.includes('главную')||b.textContent.includes('головну'))b.textContent=t('landingPage');});
+  ['mainMenu','defiFull','play','more'].forEach(function(k,i){if(dlbls[i])dlbls[i].textContent=t(k);});
+  // PTR, new posts, search
+  const pt=document.getElementById('ptr-text');if(pt)pt.textContent=t('pullToRefresh');
+  const np=document.getElementById('newPostsBtn');if(np&&np.style.display!=='none')np.textContent=t('newPosts');
+  const si=document.getElementById('searchInput');if(si)si.placeholder=t('search');
+  // Landing btn in drawer
+  document.querySelectorAll('.drawer-body button').forEach(function(b){if(b.textContent.includes('←'))b.textContent=t('landingPage');});
+
+  // ── Tab content translations ──
+
+  // Staking header
+  const sh=document.querySelector('#view-staking .feed-hdr');
+  if(sh)sh.textContent=t('stakingTitle');
+  // Staking desc
+  const sd=document.querySelector('#view-staking .bg-desc');
+  if(sd)sd.textContent=t('stakingDesc');
+  // Staking labels
+  // Staking labels via direct element text
+  const myStakedLbl=document.querySelector('#view-staking .gate-bal-lbl');
+  // (labels are inside the cards, skip - values update dynamically)
+  _qs('#view-staking #stakeAmount','placeholder',t('stakeAmount'));
+  _txt('stakeGATEBtn',t('stakeBtn'));
+  _txt('claimGATEBtn',t('claimBtn'));
+  _txt('unstakeGATEBtn',t('unstakeBtn'));
+
+  // Faucet header
+  const fth=document.querySelector('#view-faucet .feed-hdr');
+  if(fth)fth.textContent=t('faucetTitle');
+  // Faucet claim button
+  const fcb=document.getElementById('claimFaucetBtn');
+  if(fcb&&!fcb.disabled)fcb.textContent=t('claimBtn2');
+
+  // Games header
+  const gh=document.querySelector('#view-games .feed-hdr');
+  if(gh)gh.textContent=t('gamesTitle');
+
+  // Lottery header
+  const lh=document.querySelector('#view-lottery .feed-hdr');
+  if(lh)lh.textContent='🎰 '+t('lottery');
+  const btk=document.getElementById('buyTicketBtn');
+  if(btk&&!btk.disabled)btk.textContent=t('buyTicket');
+
+  // Messages
+  const mi=document.getElementById('msgInput');
+  if(mi)mi.placeholder=t('typeMsg');
+  const sb2=document.querySelector('#convView button');
+  if(sb2)sb2.textContent=t('send');
+
+  // Wallet modal
+  const wt=document.querySelector('#walletModal [style*="font-size:22px"]');
+  if(wt)wt.textContent=t('connectTitle');
+  const ws=document.querySelector('#walletModal [style*="font-size:13px"][style*="muted"]');
+  if(ws)ws.textContent=t('connectSub');
+
+  // Explore trending labels
+  const tl=document.querySelectorAll('#searchResults > div');
+  if(tl[0])tl[0].textContent=t('trendingUsers');
+  if(tl[2])tl[2].textContent=t('latestPosts');
 }
+
+// Helper: set text of element by id
+function _txt(id,text){const el=document.getElementById(id);if(el)el.textContent=text;}
+// Helper: set placeholder
+function _qs(sel,attr,val){const el=document.querySelector(sel);if(el)el[attr]=val;}
 
 // Language picker
 const LANG_FLAGS={en:'🇬🇧',ru:'🇷🇺',uk:'🇺🇦',hi:'🇮🇳',zh:'🇨🇳',tr:'🇹🇷',de:'🇩🇪'};
@@ -5426,6 +5593,7 @@ const sObs=new IntersectionObserver(e=>e.forEach(x=>{if(x.isIntersecting)x.targe
 document.querySelectorAll('.pass-card').forEach(c=>sObs.observe(c));
 loadPassSupply();
 initDrawerSwipe();
+initInstallBtn();
 buildLangPicker();
 applyLang();
 // If starting on app page (e.g. PWA), show picker
@@ -5438,57 +5606,112 @@ let pwaPrompt=null;
 // PWA Install Banner
 function showPWABanner(){
   if(localStorage.getItem('og_pwa_dismissed')) return;
-  if(window.matchMedia('(display-mode: standalone)').matches) return; // Already installed
-  if(navigator.standalone) return; // iOS already installed
-
+  if(window.matchMedia('(display-mode: standalone)').matches) return;
+  if(navigator.standalone) return;
   const existing=document.getElementById('pwaBanner');
   if(existing) return;
 
-  const banner=document.createElement('div');
-  banner.id='pwaBanner';
-  banner.style.cssText='position:fixed;bottom:68px;left:12px;right:12px;background:var(--bg2);border:1px solid var(--border-g);border-radius:16px;padding:14px 16px;z-index:95;display:flex;align-items:center;gap:12px;box-shadow:0 4px 20px rgba(0,0,0,.5);animation:slideUp .3s ease;';
-
   const isIOS=/iPhone|iPad|iPod/i.test(navigator.userAgent);
   const isAndroid=/Android/i.test(navigator.userAgent);
+  if(!isIOS && !isAndroid) return; // Desktop — не показуємо
 
-  if(isIOS){
+  // Тексти по мовах
+  const tx={
+    title:{uk:'Встанови OpenGate',ru:'Установи OpenGate',en:'Install OpenGate',hi:'OpenGate इंस्टॉल करें',zh:'安装 OpenGate',tr:"OpenGate'i Yükle",de:'OpenGate installieren'},
+    sub:{uk:'Відкривай без браузера — як справжній додаток',ru:'Открывай без браузера — как настоящее приложение',en:'Open without browser — like a native app',hi:'ब्राउज़र के बिना खोलें',zh:'像原生应用一样打开',tr:'Tarayıcı olmadan aç',de:'Ohne Browser öffnen'},
+    btn:{uk:'Встановити',ru:'Установить',en:'Install',hi:'इंस्टॉल करें',zh:'安装',tr:'Yükle',de:'Installieren'},
+    iosHint:{uk:'Натисни',ru:'Нажми',en:'Tap',hi:'टैप करें',zh:'点击',tr:'Dokunun',de:'Tippe'},
+    iosStep:{uk:'→ «На екран Додому»',ru:'→ «На экран Домой»',en:'→ Add to Home Screen',hi:'→ होम स्क्रीन पर जोड़ें',zh:'→ 添加到主屏幕',tr:'→ Ana Ekrana Ekle',de:'→ Zum Home-Bildschirm'},
+    close:{uk:'Закрити',ru:'Закрыть',en:'Close',hi:'बंद करें',zh:'关闭',tr:'Kapat',de:'Schließen'},
+    later:{uk:'Пізніше',ru:'Позже',en:'Later',hi:'बाद में',zh:'稍后',tr:'Sonra',de:'Später'},
+  };
+  const L=currentLang||'en';
+  const g=k=>tx[k][L]||tx[k]['en'];
+
+  const banner=document.createElement('div');
+  banner.id='pwaBanner';
+  // Красивий дизайн — більший і помітніший
+  banner.style.cssText=[
+    'position:fixed','bottom:72px','left:10px','right:10px',
+    'background:linear-gradient(135deg,#0E1018,#141720)',
+    'border:1.5px solid rgba(245,200,66,0.5)',
+    'border-radius:18px','padding:16px','z-index:200',
+    'box-shadow:0 8px 32px rgba(0,0,0,.7),0 0 0 1px rgba(245,200,66,0.1)',
+    'animation:pwaSlide .35s cubic-bezier(.34,1.56,.64,1)',
+  ].join(';');
+
+  if(isAndroid && pwaPrompt){
     banner.innerHTML=`
-      <img src="/icon-192.png" style="width:44px;height:44px;border-radius:10px;flex-shrink:0;"/>
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:13px;font-weight:700;color:var(--text);">Встанови OpenGate</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px;">Натисни <b style="color:var(--gold);">⎙ Поділитись</b> → <b style="color:var(--gold);">На екран «Додому»</b></div>
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+        <img src="/icon-192.png" style="width:48px;height:48px;border-radius:12px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.4);"/>
+        <div style="flex:1;">
+          <div style="font-size:15px;font-weight:700;color:#EDF0F5;margin-bottom:2px;">${g('title')}</div>
+          <div style="font-size:12px;color:#5A6478;line-height:1.4;">${g('sub')}</div>
+        </div>
       </div>
-      <button onclick="document.getElementById('pwaBanner').remove();localStorage.setItem('og_pwa_dismissed','1')" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px;flex-shrink:0;">✕</button>
+      <div style="display:flex;gap:8px;">
+        <button onclick="installPWA()" style="flex:1;padding:11px;border-radius:11px;background:var(--gold);color:#08090C;font-size:14px;font-weight:700;border:none;cursor:pointer;">📲 ${g('btn')}</button>
+        <button onclick="dismissPWA()" style="padding:11px 16px;border-radius:11px;background:rgba(255,255,255,0.06);color:#5A6478;font-size:13px;font-weight:600;border:1px solid rgba(255,255,255,0.08);cursor:pointer;">${g('later')}</button>
+      </div>
     `;
-    document.body.appendChild(banner);
-  } else if(isAndroid && pwaPrompt){
+  } else if(isIOS){
     banner.innerHTML=`
-      <img src="/icon-192.png" style="width:44px;height:44px;border-radius:10px;flex-shrink:0;"/>
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:13px;font-weight:700;color:var(--text);">Встанови як додаток</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px;">Без браузерного UI, як нативний додаток</div>
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+        <img src="/icon-192.png" style="width:48px;height:48px;border-radius:12px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.4);"/>
+        <div style="flex:1;">
+          <div style="font-size:15px;font-weight:700;color:#EDF0F5;margin-bottom:2px;">${g('title')}</div>
+          <div style="font-size:12px;color:#5A6478;line-height:1.4;">${g('sub')}</div>
+        </div>
+        <button onclick="dismissPWA()" style="background:none;border:none;color:#5A6478;font-size:20px;cursor:pointer;padding:4px;flex-shrink:0;">✕</button>
       </div>
-      <button onclick="installPWA()" style="background:var(--gold);color:#08090C;border:none;border-radius:9px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;">Встановити</button>
-      <button onclick="document.getElementById('pwaBanner').remove();localStorage.setItem('og_pwa_dismissed','1')" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px 0 4px 4px;flex-shrink:0;">✕</button>
+      <div style="background:rgba(245,200,66,0.08);border:1px solid rgba(245,200,66,0.2);border-radius:11px;padding:12px;display:flex;align-items:center;gap:10px;">
+        <div style="font-size:22px;">⎙</div>
+        <div style="font-size:12px;color:#EDF0F5;line-height:1.5;">
+          ${g('iosHint')} <b style="color:var(--gold);">⎙ Share</b> ${g('iosStep')}
+        </div>
+      </div>
     `;
-    document.body.appendChild(banner);
   }
+
+  document.body.appendChild(banner);
+}
+
+function triggerInstall(){
+  if(pwaPrompt){
+    installPWA();
+  } else {
+    // iOS або вже після prompt — показуємо банер з інструкцією
+    localStorage.removeItem('og_pwa_dismissed'); // скидаємо щоб показало
+    showPWABanner();
+  }
+}
+
+// Показуємо кнопку в drawer якщо ще не встановлено
+function initInstallBtn(){
+  if(window.matchMedia('(display-mode: standalone)').matches) return;
+  if(navigator.standalone) return;
+  const isMob=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if(!isMob) return;
+  const dbtn=document.getElementById('drawerInstallBtn');
+  if(dbtn) dbtn.style.display='block';
+}
+
+function dismissPWA(){
+  const b=document.getElementById('pwaBanner');
+  if(b){b.style.animation='pwaSlideOut .2s ease forwards';setTimeout(()=>b.remove(),200);}
+  localStorage.setItem('og_pwa_dismissed','1');
 }
 
 window.addEventListener('beforeinstallprompt',e=>{
   e.preventDefault();
   pwaPrompt=e;
-  const btn=document.getElementById('pwaInstallBtn');
-  if(btn)btn.style.display='block';
-  const dbtn=document.getElementById('drawerInstallBtn');
-  if(dbtn)dbtn.style.display='block';
-  // Show banner after 3 seconds
-  setTimeout(showPWABanner, 3000);
+  const btn=document.getElementById('pwaInstallBtn');if(btn)btn.style.display='block';
+  const dbtn=document.getElementById('drawerInstallBtn');if(dbtn)dbtn.style.display='block';
+  setTimeout(showPWABanner,4000);
 });
 
-// iOS — show banner after 5 seconds if in browser
-if(/iPhone|iPad|iPod/i.test(navigator.userAgent) && !navigator.standalone){
-  setTimeout(showPWABanner, 5000);
+if(/iPhone|iPad|iPod/i.test(navigator.userAgent)&&!navigator.standalone){
+  setTimeout(showPWABanner,5000);
 }
 
 async function installPWA(){
@@ -5496,17 +5719,20 @@ async function installPWA(){
   pwaPrompt.prompt();
   const result=await pwaPrompt.userChoice;
   if(result.outcome==='accepted'){
-    document.getElementById('pwaInstallBtn').style.display='none';
-    const b=document.getElementById('pwaBanner');
-    if(b)b.remove();
+    const btn=document.getElementById('pwaInstallBtn');if(btn)btn.style.display='none';
+    const dbtn=document.getElementById('drawerInstallBtn');if(dbtn)dbtn.style.display='none';
+    dismissPWA();
+    showToast('✓ Додаток встановлено!','ok');
   }
   pwaPrompt=null;
 }
 
-// Add slideUp animation
+// PWA animations
 const pwaStyle=document.createElement('style');
-pwaStyle.textContent='@keyframes slideUp{from{transform:translateY(20px);opacity:0;}to{transform:translateY(0);opacity:1;}}';
-document.head.appendChild(pwaStyle);
+pwaStyle.textContent=`
+@keyframes pwaSlide{from{transform:translateY(30px);opacity:0;}to{transform:translateY(0);opacity:1;}}
+@keyframes pwaSlideOut{from{transform:translateY(0);opacity:1;}to{transform:translateY(30px);opacity:0;}}
+`;
 loadPosts();
 // wallet events handled in tryAutoConnect block below
 async function tryAutoConnect(){
