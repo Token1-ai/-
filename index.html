@@ -452,6 +452,16 @@ textarea.form-inp{resize:vertical;min-height:80px;}
 
   /* Battleship boards */
   #myBoard, #enemyBoard{max-width:calc(50vw - 24px)!important;}
+
+  /* Battleship layout — стаки вертикально на мобільному */
+  #battleGame > div:nth-child(2){flex-direction:column!important;gap:12px!important;padding:10px!important;}
+  #battleGame > div:nth-child(2) > div{min-width:unset!important;width:100%!important;}
+  #myBoard, #enemyBoard{max-width:min(300px, calc(100vw - 32px))!important;margin:0 auto!important;}
+
+  /* Dice кнопки числа — менші на мобільному */
+  #dguess1,#dguess2,#dguess3,#dguess4,#dguess5,#dguess6{width:38px!important;height:38px!important;font-size:15px!important;}
+  /* Dice ставки */
+  #dbet50,#dbet100,#dbet200,#dbet500{font-size:13px!important;padding:8px 4px!important;}
 }
 
 /* iPhone SE / маленькі телефони (до 375px) */
@@ -1928,11 +1938,9 @@ async function connectWallet(){
     if(window.trustwallet) window.ethereum=window.trustwallet;
     else{
       document.getElementById('walletModal').classList.add('open');
-      // Always show mobile hint on mobile
-      if(isMobile()){
-        const h=document.getElementById('mobileWalletHint');
-        if(h)h.style.display='block';
-      }
+      // Always show mobile hint — helpful on all phones
+      const h=document.getElementById('mobileWalletHint');
+      if(h)h.style.display='block';
       return;
     }
   }
@@ -2910,12 +2918,11 @@ async function borrowZkWithGATE(){
   if(!amt||parseFloat(amt)<=0){showToast('Enter collateral amount','err');return;}
   try{
     await switchToLitVM();
-    const gate=new ethers.Contract(GATE_TOKEN,GATE_ABI,signer);
-    const lend=new ethers.Contract(GATE_LENDING,LENDING_ABI,signer);
+    const freshSigner=await provider.getSigner();
     const amount=ethers.parseEther(amt);
-    showToast('Approving GATE...','ok');
-    await (await gate.approve(GATE_LENDING,amount)).wait();
+    await smartApprove(GATE_LENDING, amount, freshSigner);
     showToast('Borrowing zkLTC...','ok');
+    const lend=new ethers.Contract(GATE_LENDING,LENDING_ABI,freshSigner);
     const tx=await lend.borrowZkWithGate(amount);
     await tx.wait();
     showToast('zkLTC borrowed! 🎉','ok');
@@ -2973,11 +2980,10 @@ async function loadMyLoans(){
 async function repayZkLoan(loanId, totalDue){
   try{
     await switchToLitVM();
-    const gate=new ethers.Contract(GATE_TOKEN,GATE_ABI,signer);
-    const lend=new ethers.Contract(GATE_LENDING,LENDING_ABI,signer);
+    const freshSigner=await provider.getSigner();
+    const lend=new ethers.Contract(GATE_LENDING,LENDING_ABI,freshSigner);
     const amount=ethers.parseEther(totalDue);
-    showToast('Approving GATE...','ok');
-    await (await gate.approve(GATE_LENDING,amount)).wait();
+    await smartApprove(GATE_LENDING, amount, freshSigner);
     showToast('Repaying loan...','ok');
     await (await lend.repayGateWithZk(loanId)).wait();
     showToast('Loan repaid! zkLTC returned 🎉','ok');
@@ -4034,14 +4040,14 @@ async function rollDice(){
   if(!diceGuess){showToast('Pick a number first','err');return;}
   const btn=document.getElementById('rollBtn');
   if(diceToken==='zkLTC'){showToast('zkLTC dice coming soon! Use GATE for now.','err');return;}
+  btn.textContent='⏳ Checking...';btn.disabled=true;
   try{
     await switchToLitVM();
     const freshSigner=await provider.getSigner();
-    const gate=new ethers.Contract(GATE_TOKEN,GATE_ABI,freshSigner);
     const amount=ethers.parseEther(diceBet.toString());
-    showToast('Approving GATE...','ok');
-    await (await gate.approve(GATE_DICE,amount)).wait();
-    btn.textContent='Rolling...';btn.disabled=true;
+    // Smart approve — skips tx if allowance already sufficient
+    await smartApprove(GATE_DICE, amount, freshSigner);
+    btn.textContent='🎲 Rolling...';
     const DICE_IFACE=new ethers.Interface(['function roll(uint8 guess, uint256 bet)']);
     const tx=await freshSigner.sendTransaction({to:GATE_DICE,data:DICE_IFACE.encodeFunctionData('roll',[diceGuess,amount])});
     const receipt=await tx.wait();
@@ -4151,14 +4157,13 @@ async function loadLotteryWinners(lottery, currentRoundId){
 async function buyLotteryTicket(){
   if(!userAddr){showToast('Connect wallet first','err');return;}
   const btn=document.getElementById('buyTicketBtn');
+  btn.textContent='⏳ Checking...';btn.disabled=true;
   try{
     await switchToLitVM();
     const freshSigner=await provider.getSigner();
-    const gate=new ethers.Contract(GATE_TOKEN,GATE_ABI,freshSigner);
     const amount=ethers.parseEther((lotteryQty*10).toString());
-    showToast('Approving GATE...','ok');
-    await (await gate.approve(GATE_LOTTERY,amount)).wait();
-    btn.textContent='Buying...';btn.disabled=true;
+    await smartApprove(GATE_LOTTERY, amount, freshSigner);
+    btn.textContent='🎟️ Buying...';
     const LOTTERY_IFACE=new ethers.Interface(['function buyTicket(uint256 qty)']);
     const tx=await freshSigner.sendTransaction({to:GATE_LOTTERY,data:LOTTERY_IFACE.encodeFunctionData('buyTicket',[BigInt(lotteryQty)])});
     await tx.wait();
@@ -4771,7 +4776,21 @@ function openDMWith(wallet){showTab('messages');setTimeout(function(){openDM(wal
 // ── STAKING ──
 async function loadStakingInfo(){try{const p=getReadProvider();const sc=new ethers.Contract(GATE_STAKING,STAKING_ABI,p);const [rp,ts]=await Promise.all([sc.rewardPool(),sc.totalStaked()]);document.getElementById('rewardPoolVal').textContent=parseFloat(ethers.formatEther(rp)).toFixed(0)+' GATE';document.getElementById('totalStakedVal').textContent=parseFloat(ethers.formatEther(ts)).toFixed(2);if(userAddr){const [staked,pending]=await sc.getStakeInfo(userAddr);document.getElementById('myStaked').textContent=parseFloat(ethers.formatEther(staked)).toFixed(2);document.getElementById('myPending').textContent=parseFloat(ethers.formatEther(pending)).toFixed(4);}}catch(e){}}
 let stakingTimer;
-async function stakeGATE(){if(!userAddr){showToast('Connect wallet first','err');return;}const amt=document.getElementById('stakeAmount').value;if(!amt||parseFloat(amt)<=0){showToast('Enter amount','err');return;}try{await switchToLitVM();const freshSigner=await provider.getSigner();const gate=new ethers.Contract(GATE_TOKEN,GATE_ABI,freshSigner);const amount=ethers.parseEther(String(amt));showToast('Approving GATE...','ok');await(await gate.approve(GATE_STAKING,amount)).wait();showToast('Staking...','ok');const iface=new ethers.Interface(['function stake(uint256 amount)']);await(await freshSigner.sendTransaction({to:GATE_STAKING,data:iface.encodeFunctionData('stake',[amount])})).wait();showToast('Staked! 💎','ok');loadStakingInfo();loadGateBal();}catch(e){showToast((e.reason||e.message||'Failed').slice(0,50),'err');}}
+async function stakeGATE(){
+  if(!userAddr){showToast('Connect wallet first','err');return;}
+  const amt=document.getElementById('stakeAmount').value;
+  if(!amt||parseFloat(amt)<=0){showToast('Enter amount','err');return;}
+  try{
+    await switchToLitVM();
+    const freshSigner=await provider.getSigner();
+    const amount=ethers.parseEther(String(amt));
+    await smartApprove(GATE_STAKING, amount, freshSigner);
+    showToast('Staking...','ok');
+    const iface=new ethers.Interface(['function stake(uint256 amount)']);
+    await(await freshSigner.sendTransaction({to:GATE_STAKING,data:iface.encodeFunctionData('stake',[amount])})).wait();
+    showToast('Staked! 💎','ok');loadStakingInfo();loadGateBal();
+  }catch(e){showToast((e.reason||e.message||'Failed').slice(0,50),'err');}
+}
 async function claimGATE(){if(!userAddr){showToast('Connect wallet first','err');return;}try{await switchToLitVM();const freshSigner=await provider.getSigner();const iface=new ethers.Interface(['function claim()']);await(await freshSigner.sendTransaction({to:GATE_STAKING,data:iface.encodeFunctionData('claim',[])})).wait();showToast('Rewards claimed! 🎉','ok');loadStakingInfo();loadGateBal();}catch(e){showToast((e.reason||e.message||'Failed').slice(0,50),'err');}}
 async function unstakeGATE(){if(!userAddr){showToast('Connect wallet first','err');return;}try{await switchToLitVM();const freshSigner=await provider.getSigner();const iface=new ethers.Interface(['function unstake()']);await(await freshSigner.sendTransaction({to:GATE_STAKING,data:iface.encodeFunctionData('unstake',[])})).wait();showToast('Unstaked! 💰','ok');loadStakingInfo();loadGateBal();}catch(e){showToast((e.reason||e.message||'Failed').slice(0,50),'err');}}
 
@@ -4914,6 +4933,22 @@ async function deleteComment(commentId,postId,btn){
   }catch(e){showToast('Failed to delete','err');btn.disabled=false;}
 }
 // ── HELPERS ──
+// Smart approve — checks allowance first, approves MAX_UINT once if needed
+// This eliminates repeated approve transactions
+const MAX_UINT = ethers.MaxUint256;
+async function smartApprove(spender, amount, signerToUse){
+  const gate = new ethers.Contract(GATE_TOKEN, GATE_ABI, signerToUse);
+  const owner = await signerToUse.getAddress();
+  try{
+    const allowance = await gate.allowance(owner, spender);
+    if(allowance >= amount){
+      return; // Already approved enough — skip tx
+    }
+  }catch(e){}
+  // Approve max so user never needs to approve again for this spender
+  showToast('Approving GATE (one time only)...','ok');
+  await (await gate.approve(spender, MAX_UINT)).wait();
+}
 let toastT;
 function showToast(msg,type='ok'){
   // Filter wallet-level errors that confuse users
