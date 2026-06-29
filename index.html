@@ -1914,6 +1914,8 @@ function showTab(tab){
   document.getElementById('view-games').style.display=tab==='games'?'block':'none';
   document.getElementById('view-lending').style.display=tab==='lending'?'block':'none';
   document.getElementById('view-faucet').style.display=tab==='faucet'?'block':'none';
+  // Scroll to top on mobile when switching tabs
+  window.scrollTo({top:0,behavior:'smooth'});
   // Desktop sidebar
   document.querySelectorAll('.side-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('tab-'+tab)?.classList.add('active');
@@ -3263,10 +3265,10 @@ async function bsResumeGame(gameDbId,gameData){
       .subscribe(function(status){
         if(status==='SUBSCRIBED'){
           addBattleLog('🔴 Live');
-          bsTimer=setInterval(bsPollGame,3000);
+          bsTimer=setInterval(bsPollGame,5000);
         } else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'){
           addBattleLog('⚠️ Using polling...');
-          bsTimer=setInterval(bsPollGame,3000);
+          bsTimer=setInterval(bsPollGame,5000);
         }
       });
 
@@ -3313,10 +3315,10 @@ function bsJoinPvP(gameDbId){
       if(status==='SUBSCRIBED'){
         addBattleLog('🔴 Live');
         // Start lightweight polling as backup (every 3s)
-        bsTimer=setInterval(bsPollGame,3000);
+        bsTimer=setInterval(bsPollGame,5000);
       } else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'){
         addBattleLog('⚠️ Using polling...');
-        bsTimer=setInterval(bsPollGame,3000);
+        bsTimer=setInterval(bsPollGame,5000);
       }
     });
 
@@ -4451,9 +4453,7 @@ function subscribeToConversations(){
     })
     .subscribe(function(status){
       if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'){
-        // Reset so it can be recreated
         convsRealtimeChannel=null;
-        // Increase polling to compensate
         clearInterval(_msgPollTimer);
         _msgPollTimer=setInterval(async function(){
           if(!userAddr)return;
@@ -4464,14 +4464,13 @@ function subscribeToConversations(){
               const convList=document.getElementById('convList');
               if(convList&&convList.style.display!=='none')loadConversations();
             }
-            // Also refresh active DM
             if(currentDMWallet) loadMessages();
           }catch(e){}
-        },2000);
+        },15000); // fallback: every 15s (not 2s)
       }
     });
 
-  // Polling backup every 3s - also refreshes active DM view
+  // Polling backup — only when Realtime may miss something
   clearInterval(_msgPollTimer);
   _msgPollTimer=setInterval(async function(){
     if(!userAddr) return;
@@ -4485,10 +4484,13 @@ function subscribeToConversations(){
         const convList=document.getElementById('convList');
         if(convList&&convList.style.display!=='none') loadConversations();
       }
-      // Always refresh active DM view (catches outgoing msgs too)
-      if(currentDMWallet) loadMessages();
+      // Refresh DM only if tab is open
+      if(currentDMWallet){
+        const mv=document.getElementById('view-messages');
+        if(mv&&mv.style.display!=='none') loadMessages();
+      }
     }catch(e){}
-  },3000);
+  },20000); // every 20s instead of 3s — Realtime handles instant delivery
 }
 
 function handleNewMessage(m){
@@ -4588,12 +4590,12 @@ async function openDM(wallet){
       if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'){
         // Fallback: increase polling frequency
         clearInterval(dmTimer);
-        dmTimer=setInterval(function(){if(currentDMWallet)loadMessages();},2000);
+        dmTimer=setInterval(function(){if(currentDMWallet)loadMessages();},10000);
       }
     });
-  // Polling backup for active DM every 5s (Realtime handles instant delivery)
+  // Polling backup for active DM — Realtime handles instant delivery
   clearInterval(dmTimer);
-  dmTimer=setInterval(function(){if(currentDMWallet)loadMessages();},5000);
+  dmTimer=setInterval(function(){if(currentDMWallet)loadMessages();},15000);
 }
 function openDMByAddr(){const addr=document.getElementById('newDmAddr').value.trim().toLowerCase();if(!addr||!addr.startsWith('0x')){showToast('Enter valid address','err');return;}openDM(addr);}
 function showConvList(){
@@ -5187,11 +5189,11 @@ document.addEventListener('visibilitychange',function(){
               if(convList&&convList.style.display!=='none')loadConversations();
             }
           }catch(e){}
-        },5000);
+        },30000);
       }
       // Restart DM polling if in active chat
       if(currentDMWallet&&!dmTimer){
-        dmTimer=setInterval(function(){if(currentDMWallet)loadMessages();},5000);
+        dmTimer=setInterval(function(){if(currentDMWallet)loadMessages();},15000);
       }
       // Refresh data that might have changed
       updateUnreadBadge();
