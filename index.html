@@ -1977,6 +1977,14 @@ function showTab(tab){
   if(tab==='games'){}
   if(tab==='lending') loadLending();
   if(tab==='faucet') loadFaucet();
+  // Update drawer active state
+  document.querySelectorAll('.drawer-btn').forEach(b=>b.classList.remove('active'));
+  const _db=document.getElementById('drawer-'+tab);
+  if(_db)_db.classList.add('active');
+  // Update bottom mob nav
+  document.querySelectorAll('.mob-btn').forEach(b=>b.classList.remove('active'));
+  const _mb=document.getElementById('mobbtn-'+tab);
+  if(_mb)_mb.classList.add('active');
 }
 function switchFeedTab(tab,el){
   document.querySelectorAll('.feed-tab').forEach(t=>t.classList.remove('active'));
@@ -4420,11 +4428,15 @@ async function markAllRead(){
 }
 async function updateNotifBadge(){
   if(!userAddr)return;
-  // Bell = likes, follows, challenges (not DMs)
   const {count}=await sb.from('notifications').select('*',{count:'exact',head:true})
     .eq('to_wallet',userAddr).eq('read',false).neq('type','dm');
   const badge=document.getElementById('notifBadge');
   if(badge){if(count>0){badge.style.display='inline';badge.textContent=count;}else badge.style.display='none';}
+  // Sync to drawer + mob nav dot
+  const db=document.getElementById('drawerNotifBadge');
+  const md=document.getElementById('mobNotifDot');
+  if(db){if(count>0){db.style.display='inline';db.textContent=count;}else db.style.display='none';}
+  if(md)md.style.display=count>0?'block':'none';
 }
 async function updateUnreadBadge(){
   if(!userAddr)return;
@@ -4432,6 +4444,8 @@ async function updateUnreadBadge(){
     .eq('to_wallet',userAddr).eq('read',false);
   const badge=document.getElementById('unreadBadge');
   if(badge){if(count>0){badge.style.display='inline';badge.textContent=count;}else badge.style.display='none';}
+  const db=document.getElementById('drawerUnreadBadge');
+  if(db){if(count>0){db.style.display='inline';db.textContent=count;}else db.style.display='none';}
 }
 async function createNotif(toWallet,type,postId=null){if(!userAddr||userAddr===toWallet)return;try{await sb.from('notifications').insert({to_wallet:toWallet,from_wallet:userAddr,type,post_id:postId||undefined});}catch(e){}}
 
@@ -4892,65 +4906,8 @@ function updateDrawerUser(){
     if(btnContent){btnContent.textContent='☰';btn.style.fontSize='18px';}
   }
 }
-function updateDrawerBadges(){
-  // Notif badge
-  const nb=document.getElementById('drawerNotifBadge');
-  const mnb=document.getElementById('notifBadge');
-  const mob=document.getElementById('mobNotifDot');
-  if(nb&&mnb){
-    if(mnb.style.display!=='none'){
-      nb.style.display='inline';nb.textContent=mnb.textContent;
-      if(mob)mob.style.display='block';
-    } else {
-      nb.style.display='none';
-      if(mob)mob.style.display='none';
-    }
-  }
-  // Unread badge
-  const ub=document.getElementById('drawerUnreadBadge');
-  const mub=document.getElementById('unreadBadge');
-  if(ub&&mub){
-    if(mub.style.display!=='none'){ub.style.display='inline';ub.textContent=mub.textContent;}
-    else ub.style.display='none';
-  }
-}
-
-// Patch showTab to also update drawer active state
-const _origShowTab=showTab;
-function showTab(tab){
-  _origShowTab(tab);
-  // Update drawer active buttons
-  document.querySelectorAll('.drawer-btn').forEach(b=>b.classList.remove('active'));
-  const db=document.getElementById('drawer-'+tab);
-  if(db)db.classList.add('active');
-  // Update bottom tab
-  document.querySelectorAll('.mob-btn').forEach(b=>b.classList.remove('active'));
-  const mb=document.getElementById('mobbtn-'+tab);
-  if(mb)mb.classList.add('active');
-}
-
-// Patch updateNotifBadge to also update drawer
-const _origUpdateNotifBadge=updateNotifBadge;
-updateNotifBadge=async function(){
-  await _origUpdateNotifBadge();
-  updateDrawerBadges();
-};
-const _origUpdateUnreadBadge=updateUnreadBadge;
-updateUnreadBadge=async function(){
-  await _origUpdateUnreadBadge();
-  updateDrawerBadges();
-};
-
 // ── MOBILE WALLET FIX ──
-// Better detection for mobile wallets
 function isMobile(){return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);}
-function isInWalletBrowser(){
-  const ua=navigator.userAgent;
-  return ua.includes('MetaMaskMobile')||ua.includes('Trust/')||window.ethereum?.isMetaMask||window.ethereum?.isTrust;
-}
-
-
-
 
 // ── i18n ──
 const LANGS = {
