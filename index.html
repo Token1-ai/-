@@ -1798,48 +1798,13 @@ async function connectWithWallet(type){
 
 async function connectWallet(){
   if(!window.ethereum){
-    if(window.trustwallet){
-      window.ethereum = window.trustwallet;
-    } else if(isMobile()){
-      // Mobile without wallet browser — show options with deeplinks
-      document.getElementById('walletModal').classList.add('open');
-      return;
-    } else {
-      document.getElementById('walletModal').classList.add('open');
-      return;
-    }
+    if(window.trustwallet) window.ethereum=window.trustwallet;
+    else{ document.getElementById('walletModal').classList.add('open'); return; }
   }
   try{
-    provider = new ethers.BrowserProvider(window.ethereum);
-    await provider.send('eth_requestAccounts',[]);
-    signer = await provider.getSigner();
-    userAddr = (await signer.getAddress()).toLowerCase();
-    const btn = document.getElementById('connectBtn');
-    btn.classList.add('connected');
-    btn.innerHTML = `<div class="w-dot"></div>${userAddr.slice(0,6)}...${userAddr.slice(-4)}`;
-    document.getElementById('newPostBtn').classList.add('show');
-    document.getElementById('composer').classList.add('show');
-    await ensureUser();
-    updateDrawerUser();
-    loadGateBal();
-    loadPosts();
-    subscribeToNewPosts();
-    updateNotifBadge();
-    cleanupOldNotifications();
-    loadRewardsPool();
-    setTimeout(function(){
-      subscribeToConversations();
-      updateUnreadBadge();
-    }, 500);
-    try{
-      sb.channel('notifs-'+userAddr)
-        .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'to_wallet=eq.'+userAddr},function(){
-          updateNotifBadge();
-        })
-        .subscribe();
-    }catch(e){}
-    subscribeToMyGameInvites();
-  } catch(e){ showToast('Connection cancelled','err'); }
+    const accounts=await window.ethereum.request({method:'eth_requestAccounts'});
+    if(accounts&&accounts.length>0) await _doConnect(accounts[0]);
+  }catch(e){ showToast('Connection cancelled','err'); }
 }
 
 async function switchToBNB(){
@@ -1941,10 +1906,16 @@ function showTab(tab){
   document.getElementById('view-games').style.display=tab==='games'?'block':'none';
   document.getElementById('view-lending').style.display=tab==='lending'?'block':'none';
   document.getElementById('view-faucet').style.display=tab==='faucet'?'block':'none';
+  // Desktop sidebar
   document.querySelectorAll('.side-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('tab-'+tab)?.classList.add('active');
-  document.querySelectorAll('.mob-btn').forEach((b,i)=>b.classList.toggle('active',(tab==='feed'&&i===0)||(tab==='profile'&&i===1)));
-  if(tab==='profile') loadProfile();
+  // Drawer
+  document.querySelectorAll('.drawer-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('drawer-'+tab)?.classList.add('active');
+  // Mobile bottom nav
+  document.querySelectorAll('.mob-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('mobbtn-'+tab)?.classList.add('active');
+  if(tab==='feed') document.getElementById('mobbtn-feed')?.classList.add('active');  if(tab==='profile') loadProfile();
   if(tab==='staking'){ loadStakingInfo(); clearInterval(stakingTimer); stakingTimer=setInterval(loadStakingInfo,10000); }
   else clearInterval(stakingTimer);
   if(tab==='messages'){ loadConversations(); subscribeToConversations(); }
@@ -1977,14 +1948,6 @@ function showTab(tab){
   if(tab==='games'){}
   if(tab==='lending') loadLending();
   if(tab==='faucet') loadFaucet();
-  // Update drawer active state
-  document.querySelectorAll('.drawer-btn').forEach(b=>b.classList.remove('active'));
-  const _db=document.getElementById('drawer-'+tab);
-  if(_db)_db.classList.add('active');
-  // Update bottom mob nav
-  document.querySelectorAll('.mob-btn').forEach(b=>b.classList.remove('active'));
-  const _mb=document.getElementById('mobbtn-'+tab);
-  if(_mb)_mb.classList.add('active');
 }
 function switchFeedTab(tab,el){
   document.querySelectorAll('.feed-tab').forEach(t=>t.classList.remove('active'));
@@ -5248,8 +5211,7 @@ let pwaPrompt=null;
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();pwaPrompt=e;const btn=document.getElementById('pwaInstallBtn');if(btn)btn.style.display='block';});
 async function installPWA(){if(!pwaPrompt)return;pwaPrompt.prompt();const result=await pwaPrompt.userChoice;if(result.outcome==='accepted')document.getElementById('pwaInstallBtn').style.display='none';pwaPrompt=null;}
 loadPosts();
-window.ethereum?.on('accountsChanged',()=>location.reload());
-window.ethereum?.on('chainChanged',()=>location.reload());
+// wallet events handled in tryAutoConnect block below
 async function tryAutoConnect(){
   // Show mobile deeplink hint if on mobile and no wallet
   if(isMobile()&&!window.ethereum){
@@ -5258,30 +5220,53 @@ async function tryAutoConnect(){
   }
   if(!window.ethereum)return;
   try{
+    // Use eth_accounts (no popup) — only connects if already authorized
     const accounts=await window.ethereum.request({method:'eth_accounts'});
     if(accounts&&accounts.length>0){
-      provider=new ethers.BrowserProvider(window.ethereum);
-      signer=await provider.getSigner();
-      userAddr=(await signer.getAddress()).toLowerCase();
-      const btn=document.getElementById('connectBtn');
-      btn.classList.add('connected');
-      btn.innerHTML='<div class="w-dot"></div>'+userAddr.slice(0,6)+'...'+userAddr.slice(-4);
-      document.getElementById('newPostBtn').classList.add('show');
-      document.getElementById('composer').classList.add('show');
-      await ensureUser();
-      updateDrawerUser();
-      loadGateBal();loadPosts();updateNotifBadge();cleanupOldNotifications();loadRewardsPool();
-      setTimeout(function(){
-        subscribeToConversations();
-        updateUnreadBadge();
-        try{sb.channel('notifs-auto-'+userAddr).on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'to_wallet=eq.'+userAddr},function(){updateNotifBadge();}).subscribe();}catch(e){}
-        subscribeToMyGameInvites();
-      },800);
+      await _doConnect(accounts[0]);
+    } else {
+      // Check if user previously connected — if so, try silent reconnect
+      const saved=localStorage.getItem('og_wallet');
+      if(saved){
+        // Try requesting accounts (may show popup on first visit after refresh)
+        const req=await window.ethereum.request({method:'eth_requestAccounts'}).catch(()=>null);
+        if(req&&req.length>0) await _doConnect(req[0]);
+      }
     }
   }catch(e){}
 }
+
+async function _doConnect(addr){
+  provider=new ethers.BrowserProvider(window.ethereum);
+  signer=await provider.getSigner();
+  userAddr=(await signer.getAddress()).toLowerCase();
+  // Save to localStorage so next visit auto-reconnects
+  localStorage.setItem('og_wallet',userAddr);
+  const btn=document.getElementById('connectBtn');
+  btn.classList.add('connected');
+  btn.innerHTML='<div class="w-dot"></div>'+userAddr.slice(0,6)+'...'+userAddr.slice(-4);
+  document.getElementById('newPostBtn').classList.add('show');
+  document.getElementById('composer').classList.add('show');
+  await ensureUser();
+  updateDrawerUser();
+  loadGateBal();loadPosts();updateNotifBadge();cleanupOldNotifications();loadRewardsPool();
+  setTimeout(function(){
+    subscribeToConversations();
+    updateUnreadBadge();
+    try{sb.channel('notifs-auto-'+userAddr).on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'to_wallet=eq.'+userAddr},function(){updateNotifBadge();}).subscribe();}catch(e){}
+    subscribeToMyGameInvites();
+  },800);
+}
+
 tryAutoConnect();
-</script>
+// Also listen for wallet events to keep connected
+if(window.ethereum){
+  window.ethereum.on('accountsChanged',function(accounts){
+    if(accounts&&accounts.length>0){ _doConnect(accounts[0]); }
+    else { localStorage.removeItem('og_wallet'); location.reload(); }
+  });
+  window.ethereum.on('chainChanged',()=>location.reload());
+}</script>
 <script>
 if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('/sw.js').then(()=>console.log('SW registered')).catch(e=>console.log('SW error',e));});}
 </script>
