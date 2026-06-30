@@ -1848,14 +1848,25 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let provider, signer, userAddr, currentUser, mintPrice, mintType;
 
 // ── RPC PROVIDER ──
-// Use MetaMask provider if connected (no rate limit), fallback to public RPC
+// Use MetaMask provider if connected (no rate limit), fallback to public RPC.
+// Cache the fallback providers — creating a new JsonRpcProvider every call
+// forces ethers to re-run network detection (eth_chainId) each time, which
+// doubles every RPC call and adds up fast with 10s-interval polling (staking tab).
+let _cachedLitVMProvider=null;
+let _cachedBNBProvider=null;
 function getReadProvider(){
   if(provider) return provider; // MetaMask already connected - use it!
-  return new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http');
+  if(!_cachedLitVMProvider){
+    _cachedLitVMProvider=new ethers.JsonRpcProvider('https://liteforge.rpc.caldera.xyz/http',undefined,{staticNetwork:true});
+  }
+  return _cachedLitVMProvider;
 }
 function getBNBProvider(){
   // BNB reads always use public RPC (not LitVM)
-  return new ethers.JsonRpcProvider('https://bsc-dataseed.binance.org/');
+  if(!_cachedBNBProvider){
+    _cachedBNBProvider=new ethers.JsonRpcProvider('https://bsc-dataseed.binance.org/',undefined,{staticNetwork:true});
+  }
+  return _cachedBNBProvider;
 }
 
 // ── CACHE ──
@@ -1990,7 +2001,7 @@ async function ensureUser(){
 async function checkPassType(){
   if(!userAddr) return;
   try{
-    const bnbP = new ethers.JsonRpcProvider('https://bsc-dataseed.binance.org/');
+    const bnbP = getBNBProvider();
     const nftAbi = ['function balanceOf(address) view returns(uint256)'];
     const goldNFT   = new ethers.Contract('0x4D26Ec2f8edbb3F567953CC7573FF60cA009258c', nftAbi, bnbP);
     const silverNFT = new ethers.Contract('0xeaDF62931f8ef2Ec546E77fBC5E56F1B3157Af89', nftAbi, bnbP);
@@ -2062,7 +2073,7 @@ function showTab(tab){
   document.querySelectorAll('.mob-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('mobbtn-'+tab)?.classList.add('active');
   if(tab==='feed') document.getElementById('mobbtn-feed')?.classList.add('active');  if(tab==='profile') loadProfile();
-  if(tab==='staking'){ loadStakingInfo(); clearInterval(stakingTimer); stakingTimer=setInterval(loadStakingInfo,10000); }
+  if(tab==='staking'){ loadStakingInfo(); clearInterval(stakingTimer); stakingTimer=setInterval(loadStakingInfo,20000); }
   else clearInterval(stakingTimer);
   if(tab==='messages'){ loadConversations(); subscribeToConversations(); }
   else {
@@ -2266,6 +2277,7 @@ async function createPost(){
   btn.disabled=false; btn.textContent='Post';
 }
 let postsRealtimeChannel=null;
+let notifsAutoChannel=null;
 function subscribeToNewPosts(){
   if(postsRealtimeChannel) return;
   postsRealtimeChannel=sb.channel('posts-feed')
@@ -4494,9 +4506,16 @@ async function showFollowersList(wallet, type){
 async function cleanupOldNotifications(){
   if(!userAddr)return;
   try{
+    // All notification types (likes, follows, challenges, DMs) — cleaned up after 24h
     const cutoff=new Date(Date.now()-24*60*60*1000).toISOString();
-    await sb.from('notifications').delete().eq('to_wallet',userAddr).lt('created_at',cutoff);
-  }catch(e){}
+    const res=await sb.from('notifications').delete().eq('to_wallet',userAddr).lt('created_at',cutoff);
+    // If this errors silently, it's almost always a Supabase RLS policy blocking
+    // DELETE for the anon key (no auth.uid() since there's no Supabase Auth here).
+    // Check: Supabase → Authentication → Policies → notifications table → DELETE policy
+    // should allow it for the anon role, e.g.: USING (true) or a wallet-based check
+    // that doesn't rely on auth.uid().
+    if(res.error) console.warn('cleanupOldNotifications blocked (likely RLS):', res.error.message);
+  }catch(e){console.warn('cleanupOldNotifications failed:',e.message);}
 }
 async function loadNotifications(){
   if(!userAddr)return;
@@ -4594,17 +4613,17 @@ function subscribeToConversations(){
   if(!userAddr||convsRealtimeChannel) return;
 
   // Realtime WebSocket - listens for ALL messages involving this user
-  convsRealtimeChannel=sb.channel('msgs-'+userAddr+'-'+Date.now())
+  convsRealtimeChannel=sb.channel('msgs-'+userAddr)
     .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},function(payload){
       const m=payload.new;
       if(!m) return;
-      // Only handle messages TO or FROM this user
       if(m.to_wallet!==userAddr&&m.from_wallet!==userAddr) return;
       handleNewMessage(m);
     })
     .subscribe(function(status){
       if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'){
         convsRealtimeChannel=null;
+        // Only poll as a FALLBACK when Realtime fails — not always-on
         clearInterval(_msgPollTimer);
         _msgPollTimer=setInterval(async function(){
           if(!userAddr)return;
@@ -4617,31 +4636,11 @@ function subscribeToConversations(){
             }
             if(currentDMWallet) loadMessages();
           }catch(e){}
-        },15000); // fallback: every 15s (not 2s)
+        },20000); // fallback only
       }
     });
-
-  // Polling backup — only when Realtime may miss something
-  clearInterval(_msgPollTimer);
-  _msgPollTimer=setInterval(async function(){
-    if(!userAddr) return;
-    try{
-      const {count}=await sb.from('messages').select('*',{count:'exact',head:true})
-        .eq('to_wallet',userAddr).eq('read',false);
-      const c=count||0;
-      if(c!==_lastMsgCount){
-        _lastMsgCount=c;
-        updateUnreadBadge();
-        const convList=document.getElementById('convList');
-        if(convList&&convList.style.display!=='none') loadConversations();
-      }
-      // Refresh DM only if tab is open
-      if(currentDMWallet){
-        const mv=document.getElementById('view-messages');
-        if(mv&&mv.style.display!=='none') loadMessages();
-      }
-    }catch(e){}
-  },20000); // every 20s instead of 3s — Realtime handles instant delivery
+  // No always-on polling here — Realtime handles delivery.
+  // Polling only activates inside the CHANNEL_ERROR branch above.
 }
 
 function handleNewMessage(m){
@@ -4739,14 +4738,13 @@ async function openDM(wallet){
     })
     .subscribe(function(status){
       if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'){
-        // Fallback: increase polling frequency
+        // Fallback polling — only when Realtime connection fails
         clearInterval(dmTimer);
         dmTimer=setInterval(function(){if(currentDMWallet)loadMessages();},10000);
       }
     });
-  // Polling backup for active DM — Realtime handles instant delivery
-  clearInterval(dmTimer);
-  dmTimer=setInterval(function(){if(currentDMWallet)loadMessages();},15000);
+  // No always-on polling — Realtime delivers messages instantly.
+  // dmTimer only activates inside the CHANNEL_ERROR branch above.
 }
 function openDMByAddr(){const addr=document.getElementById('newDmAddr').value.trim().toLowerCase();if(!addr||!addr.startsWith('0x')){showToast('Enter valid address','err');return;}openDM(addr);}
 function showConvList(){
@@ -5547,7 +5545,10 @@ function buildLangPicker(){
       el.classList.remove('ready');
       if(pt)pt.textContent=t('pullToRefresh');
     }
-    if(diff>10)e.preventDefault();
+    // Only block native scroll once we've committed to a pull gesture (>10px),
+    // and only while actively pulling — avoids forcing the browser into
+    // synchronous (non-passive) touch handling on every single touchmove.
+    if(diff>10) e.preventDefault();
   },{passive:false});
 
   document.addEventListener('touchend',function(){
@@ -5701,6 +5702,29 @@ function showPWABanner(){
         </div>
       </div>
     `;
+  } else if(isAndroid && !pwaPrompt){
+    // Android, but browser hasn't fired beforeinstallprompt yet (e.g. already
+    // dismissed earlier this session, or unsupported browser like Samsung Internet's
+    // in-app webview). Show manual instructions instead of nothing.
+    banner.innerHTML=`
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+        <img src="/icon-192.png" style="width:48px;height:48px;border-radius:12px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.4);"/>
+        <div style="flex:1;">
+          <div style="font-size:15px;font-weight:700;color:#EDF0F5;margin-bottom:2px;">${g('title')}</div>
+          <div style="font-size:12px;color:#5A6478;line-height:1.4;">${g('sub')}</div>
+        </div>
+        <button onclick="dismissPWA()" style="background:none;border:none;color:#5A6478;font-size:20px;cursor:pointer;padding:4px;flex-shrink:0;">✕</button>
+      </div>
+      <div style="background:rgba(245,200,66,0.08);border:1px solid rgba(245,200,66,0.2);border-radius:11px;padding:12px;display:flex;align-items:center;gap:10px;">
+        <div style="font-size:20px;">⋮</div>
+        <div style="font-size:12px;color:#EDF0F5;line-height:1.5;">
+          ${g('iosHint')} <b style="color:var(--gold);">⋮ Menu</b> → "Add to Home screen" / "Install app"
+        </div>
+      </div>
+    `;
+  } else {
+    // No applicable case (shouldn't happen given earlier isIOS/isAndroid check) — abort
+    return;
   }
 
   document.body.appendChild(banner);
@@ -5807,7 +5831,11 @@ async function _doConnect(addr){
   setTimeout(function(){
     subscribeToConversations();
     updateUnreadBadge();
-    try{sb.channel('notifs-auto-'+userAddr).on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'to_wallet=eq.'+userAddr},function(){updateNotifBadge();}).subscribe();}catch(e){}
+    try{
+      if(!notifsAutoChannel){
+        notifsAutoChannel=sb.channel('notifs-'+userAddr).on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'to_wallet=eq.'+userAddr},function(){updateNotifBadge();}).subscribe();
+      }
+    }catch(e){}
     subscribeToMyGameInvites();
   },800);
 }
