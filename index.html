@@ -1711,6 +1711,23 @@ textarea.form-inp{resize:vertical;min-height:80px;}
 </div>
 
 <script>
+// ── PWA INSTALL — registered first, before anything else, so we never
+// miss the beforeinstallprompt event (it can fire very early on load) ──
+window.pwaPrompt=null;
+window.addEventListener('beforeinstallprompt',function(e){
+  e.preventDefault();
+  window.pwaPrompt=e;
+  // Notify UI bits that may already be rendered
+  document.dispatchEvent(new CustomEvent('pwaPromptReady'));
+});
+window.addEventListener('appinstalled',function(){
+  window.pwaPrompt=null;
+  localStorage.setItem('og_pwa_dismissed','1');
+  const b=document.getElementById('pwaBanner');if(b)b.remove();
+  const btn=document.getElementById('pwaInstallBtn');if(btn)btn.style.display='none';
+  const dbtn=document.getElementById('drawerInstallBtn');if(dbtn)dbtn.style.display='none';
+});
+
 // ── CONFIG ──
 const SUPABASE_URL = 'https://hgzthbidfdqomuotdocb.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhnenRoYmlkZmRxb211b3Rkb2NiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwMTI2NjEsImV4cCI6MjA5NjU4ODY2MX0.otgk-jq2k0COrIE3cUEnRBPYKGnzAHRi3LEIQhE7khA';
@@ -5627,9 +5644,7 @@ openApp=function(){
   _origOpenApp2();
   setTimeout(applyLang, 150);
 };
-let pwaPrompt=null;
-
-// PWA Install Banner
+// PWA Install Banner — supports Android, iOS, macOS Safari, and desktop Chrome/Edge
 function showPWABanner(){
   if(localStorage.getItem('og_pwa_dismissed')) return;
   if(window.matchMedia('(display-mode: standalone)').matches) return;
@@ -5637,9 +5652,12 @@ function showPWABanner(){
   const existing=document.getElementById('pwaBanner');
   if(existing) return;
 
-  const isIOS=/iPhone|iPad|iPod/i.test(navigator.userAgent);
-  const isAndroid=/Android/i.test(navigator.userAgent);
-  if(!isIOS && !isAndroid) return; // Desktop — не показуємо
+  const ua=navigator.userAgent;
+  const isIOS=/iPhone|iPad|iPod/i.test(ua);
+  const isMac=/Macintosh/i.test(ua) && !isIOS;
+  const isAndroid=/Android/i.test(ua);
+  const isSafari=/^((?!chrome|android).)*safari/i.test(ua);
+  const isChromeLike=/Chrome|Edg|OPR/i.test(ua) && !isSafari;
 
   // Тексти по мовах
   const tx={
@@ -5648,19 +5666,22 @@ function showPWABanner(){
     btn:{uk:'Встановити',ru:'Установить',en:'Install',hi:'इंस्टॉल करें',zh:'安装',tr:'Yükle',de:'Installieren'},
     iosHint:{uk:'Натисни',ru:'Нажми',en:'Tap',hi:'टैप करें',zh:'点击',tr:'Dokunun',de:'Tippe'},
     iosStep:{uk:'→ «На екран Додому»',ru:'→ «На экран Домой»',en:'→ Add to Home Screen',hi:'→ होम स्क्रीन पर जोड़ें',zh:'→ 添加到主屏幕',tr:'→ Ana Ekrana Ekle',de:'→ Zum Home-Bildschirm'},
-    close:{uk:'Закрити',ru:'Закрыть',en:'Close',hi:'बंद करें',zh:'关闭',tr:'Kapat',de:'Schließen'},
+    macSafariStep:{uk:'→ «Додати на Dock»',ru:'→ «Добавить в Dock»',en:'→ Add to Dock',hi:'→ डॉक में जोड़ें',zh:'→ 添加到程序坞',tr:'→ Dock\'a Ekle',de:'→ Zum Dock hinzufügen'},
     later:{uk:'Пізніше',ru:'Позже',en:'Later',hi:'बाद में',zh:'稍后',tr:'Sonra',de:'Später'},
   };
   const L=currentLang||'en';
-  const g=k=>tx[k][L]||tx[k]['en'];
+  const g=k=>(tx[k]&&tx[k][L])||(tx[k]&&tx[k]['en'])||'';
 
   const banner=document.createElement('div');
   banner.id='pwaBanner';
+  const isMobile=isIOS||isAndroid;
   banner.style.cssText=[
     'position:fixed',
-    'bottom:70px',
-    'left:10px',
-    'right:10px',
+    isMobile?'bottom:70px':'bottom:20px',
+    isMobile?'left:10px':'auto',
+    isMobile?'right:10px':'auto',
+    isMobile?'':'right:20px',
+    isMobile?'':'width:320px',
     'background:linear-gradient(135deg,#0E1018,#141720)',
     'border:1.5px solid rgba(245,200,66,0.5)',
     'border-radius:18px',
@@ -5669,83 +5690,66 @@ function showPWABanner(){
     'box-shadow:0 8px 32px rgba(0,0,0,.8)',
     'animation:pwaSlide .35s cubic-bezier(.34,1.56,.64,1)',
     'pointer-events:all',
-  ].join(';');
+  ].filter(Boolean).join(';');
 
-  if(isAndroid && pwaPrompt){
-    banner.innerHTML=`
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
-        <img src="/icon-192.png" style="width:48px;height:48px;border-radius:12px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.4);"/>
-        <div style="flex:1;">
-          <div style="font-size:15px;font-weight:700;color:#EDF0F5;margin-bottom:2px;">${g('title')}</div>
-          <div style="font-size:12px;color:#5A6478;line-height:1.4;">${g('sub')}</div>
-        </div>
+  const installRow=(text)=>`
+    <div style="display:flex;gap:8px;">
+      <button onclick="installPWA()" style="flex:1;padding:11px;border-radius:11px;background:var(--gold);color:#08090C;font-size:14px;font-weight:700;border:none;cursor:pointer;">📲 ${text}</button>
+      <button onclick="dismissPWA()" style="padding:11px 16px;border-radius:11px;background:rgba(255,255,255,0.06);color:#5A6478;font-size:13px;font-weight:600;border:1px solid rgba(255,255,255,0.08);cursor:pointer;">${g('later')}</button>
+    </div>`;
+
+  const manualRow=(icon,stepText)=>`
+    <div style="background:rgba(245,200,66,0.08);border:1px solid rgba(245,200,66,0.2);border-radius:11px;padding:12px;display:flex;align-items:center;gap:10px;">
+      <div style="font-size:20px;">${icon}</div>
+      <div style="font-size:12px;color:#EDF0F5;line-height:1.5;">${stepText}</div>
+    </div>`;
+
+  const header=(showClose)=>`
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <img src="/icon-192.png" style="width:48px;height:48px;border-radius:12px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.4);"/>
+      <div style="flex:1;">
+        <div style="font-size:15px;font-weight:700;color:#EDF0F5;margin-bottom:2px;">${g('title')}</div>
+        <div style="font-size:12px;color:#5A6478;line-height:1.4;">${g('sub')}</div>
       </div>
-      <div style="display:flex;gap:8px;">
-        <button onclick="installPWA()" style="flex:1;padding:11px;border-radius:11px;background:var(--gold);color:#08090C;font-size:14px;font-weight:700;border:none;cursor:pointer;">📲 ${g('btn')}</button>
-        <button onclick="dismissPWA()" style="padding:11px 16px;border-radius:11px;background:rgba(255,255,255,0.06);color:#5A6478;font-size:13px;font-weight:600;border:1px solid rgba(255,255,255,0.08);cursor:pointer;">${g('later')}</button>
-      </div>
-    `;
+      ${showClose?'<button onclick="dismissPWA()" style="background:none;border:none;color:#5A6478;font-size:20px;cursor:pointer;padding:4px;flex-shrink:0;">✕</button>':''}
+    </div>`;
+
+  // ── Branch by platform ──
+  if(window.pwaPrompt){
+    // Native install prompt is available (Android Chrome, desktop Chrome/Edge/Opera).
+    // One tap → real system install dialog, exactly like other PWAs.
+    banner.innerHTML = header(false) + installRow(g('btn'));
   } else if(isIOS){
-    banner.innerHTML=`
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
-        <img src="/icon-192.png" style="width:48px;height:48px;border-radius:12px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.4);"/>
-        <div style="flex:1;">
-          <div style="font-size:15px;font-weight:700;color:#EDF0F5;margin-bottom:2px;">${g('title')}</div>
-          <div style="font-size:12px;color:#5A6478;line-height:1.4;">${g('sub')}</div>
-        </div>
-        <button onclick="dismissPWA()" style="background:none;border:none;color:#5A6478;font-size:20px;cursor:pointer;padding:4px;flex-shrink:0;">✕</button>
-      </div>
-      <div style="background:rgba(245,200,66,0.08);border:1px solid rgba(245,200,66,0.2);border-radius:11px;padding:12px;display:flex;align-items:center;gap:10px;">
-        <div style="font-size:22px;">⎙</div>
-        <div style="font-size:12px;color:#EDF0F5;line-height:1.5;">
-          ${g('iosHint')} <b style="color:var(--gold);">⎙ Share</b> ${g('iosStep')}
-        </div>
-      </div>
-    `;
-  } else if(isAndroid && !pwaPrompt){
-    // Android, but browser hasn't fired beforeinstallprompt yet (e.g. already
-    // dismissed earlier this session, or unsupported browser like Samsung Internet's
-    // in-app webview). Show manual instructions instead of nothing.
-    banner.innerHTML=`
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
-        <img src="/icon-192.png" style="width:48px;height:48px;border-radius:12px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.4);"/>
-        <div style="flex:1;">
-          <div style="font-size:15px;font-weight:700;color:#EDF0F5;margin-bottom:2px;">${g('title')}</div>
-          <div style="font-size:12px;color:#5A6478;line-height:1.4;">${g('sub')}</div>
-        </div>
-        <button onclick="dismissPWA()" style="background:none;border:none;color:#5A6478;font-size:20px;cursor:pointer;padding:4px;flex-shrink:0;">✕</button>
-      </div>
-      <div style="background:rgba(245,200,66,0.08);border:1px solid rgba(245,200,66,0.2);border-radius:11px;padding:12px;display:flex;align-items:center;gap:10px;">
-        <div style="font-size:20px;">⋮</div>
-        <div style="font-size:12px;color:#EDF0F5;line-height:1.5;">
-          ${g('iosHint')} <b style="color:var(--gold);">⋮ Menu</b> → "Add to Home screen" / "Install app"
-        </div>
-      </div>
-    `;
+    banner.innerHTML = header(true) + manualRow('⎙', `${g('iosHint')} <b style="color:var(--gold);">⎙ Share</b> ${g('iosStep')}`);
+  } else if(isMac && isSafari){
+    banner.innerHTML = header(true) + manualRow('⎙', `${g('iosHint')} <b style="color:var(--gold);">⎙ Share</b> ${g('macSafariStep')}`);
+  } else if(isAndroid){
+    // Android but beforeinstallprompt hasn't fired (e.g. in-app browser like
+    // MetaMask/Trust that doesn't support the PWA install API).
+    banner.innerHTML = header(true) + manualRow('⋮', `${g('iosHint')} <b style="color:var(--gold);">⋮ Menu</b> → "Add to Home screen" / "Install app"`);
+  } else if(isChromeLike){
+    // Desktop Chrome/Edge but prompt not captured yet — point at the address-bar icon.
+    banner.innerHTML = header(true) + manualRow('⊕', `Шукай іконку <b style="color:var(--gold);">⊕ встановити</b> в адресному рядку браузера`);
   } else {
-    // No applicable case (shouldn't happen given earlier isIOS/isAndroid check) — abort
-    return;
+    return; // Unsupported browser (e.g. Firefox desktop) — no install path, skip silently
   }
 
   document.body.appendChild(banner);
 }
 
 function triggerInstall(){
-  if(pwaPrompt){
+  if(window.pwaPrompt){
     installPWA();
   } else {
-    // iOS або вже після prompt — показуємо банер з інструкцією
-    localStorage.removeItem('og_pwa_dismissed'); // скидаємо щоб показало
+    localStorage.removeItem('og_pwa_dismissed');
     showPWABanner();
   }
 }
 
-// Показуємо кнопку в drawer якщо ще не встановлено
+// Показуємо кнопку в drawer якщо ще не встановлено (усі платформи, не лише мобільні)
 function initInstallBtn(){
   if(window.matchMedia('(display-mode: standalone)').matches) return;
   if(navigator.standalone) return;
-  const isMob=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  if(!isMob) return;
   const dbtn=document.getElementById('drawerInstallBtn');
   if(dbtn) dbtn.style.display='block';
 }
@@ -5756,29 +5760,40 @@ function dismissPWA(){
   localStorage.setItem('og_pwa_dismissed','1');
 }
 
-window.addEventListener('beforeinstallprompt',e=>{
-  e.preventDefault();
-  pwaPrompt=e;
+// If beforeinstallprompt fires AFTER the banner is already showing manual
+// instructions, swap it out for the real one-tap install banner.
+document.addEventListener('pwaPromptReady', function(){
   const btn=document.getElementById('pwaInstallBtn');if(btn)btn.style.display='block';
   const dbtn=document.getElementById('drawerInstallBtn');if(dbtn)dbtn.style.display='block';
-  setTimeout(showPWABanner,4000);
+  const existing=document.getElementById('pwaBanner');
+  if(existing){ existing.remove(); showPWABanner(); }
+  else { setTimeout(showPWABanner, 1000); }
 });
 
-if(/iPhone|iPad|iPod/i.test(navigator.userAgent)&&!navigator.standalone){
-  setTimeout(showPWABanner,5000);
-}
+// Trigger banner on load for platforms that show manual instructions
+// (no beforeinstallprompt event exists for iOS/Safari/in-app browsers)
+(function(){
+  const ua=navigator.userAgent;
+  const isIOS=/iPhone|iPad|iPod/i.test(ua);
+  const isMac=/Macintosh/i.test(ua) && !isIOS;
+  const isAndroid=/Android/i.test(ua);
+  const isSafari=/^((?!chrome|android).)*safari/i.test(ua);
+  if((isIOS && !navigator.standalone) || (isMac && isSafari) || isAndroid){
+    setTimeout(showPWABanner, 4500);
+  }
+})();
 
 async function installPWA(){
-  if(!pwaPrompt)return;
-  pwaPrompt.prompt();
-  const result=await pwaPrompt.userChoice;
+  if(!window.pwaPrompt)return;
+  window.pwaPrompt.prompt();
+  const result=await window.pwaPrompt.userChoice;
   if(result.outcome==='accepted'){
     const btn=document.getElementById('pwaInstallBtn');if(btn)btn.style.display='none';
     const dbtn=document.getElementById('drawerInstallBtn');if(dbtn)dbtn.style.display='none';
     dismissPWA();
     showToast('✓ Додаток встановлено!','ok');
   }
-  pwaPrompt=null;
+  window.pwaPrompt=null;
 }
 
 // PWA animations
