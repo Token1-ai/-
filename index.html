@@ -1697,6 +1697,7 @@ textarea.form-inp{resize:vertical;min-height:80px;}
       <div style="padding:16px 12px 8px;">
         <button onclick="closeDrawer();goLanding()" style="width:100%;padding:10px;border-radius:10px;background:var(--bg3);border:1px solid var(--border);color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;">← Landing Page</button>
         <button onclick="closeDrawer();triggerInstall()" id="drawerInstallBtn" style="display:none;width:100%;padding:11px;border-radius:10px;background:linear-gradient(135deg,rgba(245,200,66,0.15),rgba(38,217,138,0.08));border:1px solid var(--border-g);color:var(--gold);font-size:13px;font-weight:700;cursor:pointer;margin-top:8px;">📲 Встановити як додаток</button>
+        <button onclick="showPWADiagnostics()" style="width:100%;padding:8px;border-radius:10px;background:none;border:1px dashed var(--border);color:var(--muted);font-size:11px;cursor:pointer;margin-top:6px;">🔧 Чому не встановлюється?</button>
       </div>
     </div>
   </div>
@@ -5657,6 +5658,79 @@ openApp=function(){
   setTimeout(applyLang, 150);
 };
 // PWA Install Banner — supports Android, iOS, macOS Safari, and desktop Chrome/Edge
+// On-device diagnostics — shows exactly which PWA installability requirement
+// is failing, directly on screen (no USB/remote debug needed).
+async function showPWADiagnostics(){
+  const lines=[];
+  const ua=navigator.userAgent;
+
+  // 1. HTTPS check
+  lines.push((location.protocol==='https:'?'✅':'❌')+' HTTPS: '+location.protocol);
+
+  // 2. Manifest reachable + valid
+  try{
+    const res=await fetch('/manifest.json',{cache:'no-store'});
+    if(res.ok){
+      const m=await res.json();
+      lines.push('✅ manifest.json завантажується');
+      lines.push((m.icons&&m.icons.length>=2?'✅':'❌')+' Іконки: '+(m.icons?m.icons.length:0));
+      lines.push((m.start_url?'✅':'❌')+' start_url: '+(m.start_url||'—'));
+      lines.push((m.display==='standalone'||m.display==='fullscreen'?'✅':'❌')+' display: '+m.display);
+      lines.push((m.name||m.short_name?'✅':'❌')+' name: '+(m.name||m.short_name||'—'));
+    } else {
+      lines.push('❌ manifest.json HTTP '+res.status);
+    }
+  }catch(e){
+    lines.push('❌ manifest.json не завантажується: '+e.message);
+  }
+
+  // 3. Service Worker
+  if('serviceWorker' in navigator){
+    try{
+      const reg=await navigator.serviceWorker.getRegistration();
+      if(reg){
+        lines.push('✅ Service Worker зареєстрований');
+        lines.push((reg.active?'✅':'⏳')+' SW стан: '+(reg.active?'active':(reg.installing?'installing':'waiting')));
+      } else {
+        lines.push('❌ Service Worker НЕ зареєстрований');
+      }
+    }catch(e){
+      lines.push('❌ SW помилка: '+e.message);
+    }
+  } else {
+    lines.push('❌ Service Worker не підтримується браузером');
+  }
+
+  // 4. Already installed?
+  lines.push((window.matchMedia('(display-mode: standalone)').matches?'⚠️':'✅')+' Вже встановлено: '+window.matchMedia('(display-mode: standalone)').matches);
+
+  // 5. beforeinstallprompt status
+  lines.push((window.pwaPrompt?'✅':'❌')+' beforeinstallprompt отримано: '+!!window.pwaPrompt);
+
+  // 6. Browser
+  const isChrome=/Chrome/i.test(ua)&&!/Edg|OPR/i.test(ua);
+  lines.push('ℹ️ Браузер: '+(isChrome?'Chrome':ua.match(/Edg|OPR|Firefox|Samsung/i)?.[0]||'інший'));
+
+  // 7. dismissed flag
+  const dismissed=localStorage.getItem('og_pwa_dismissed');
+  lines.push((dismissed?'⚠️':'✅')+' Раніше закрито банер: '+!!dismissed);
+
+  const html=lines.map(l=>'<div style="padding:4px 0;border-bottom:1px solid var(--border);">'+esc(l)+'</div>').join('');
+
+  const modal=document.createElement('div');
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;';
+  modal.innerHTML=`
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:20px;max-width:400px;width:100%;max-height:80vh;overflow-y:auto;">
+      <div style="font-size:16px;font-weight:700;margin-bottom:4px;">🔧 PWA Діагностика</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">Скопіюй цей текст і надішли розробнику</div>
+      <div style="font-family:monospace;font-size:11px;">${html}</div>
+      <button onclick="this.closest('div[style*=fixed]').remove()" style="width:100%;margin-top:16px;padding:10px;border-radius:10px;background:var(--gold);color:#08090C;border:none;font-weight:700;cursor:pointer;">Закрити</button>
+    </div>
+  `;
+  modal.onclick=function(e){if(e.target===modal)modal.remove();};
+  document.body.appendChild(modal);
+}
+
 function showPWABanner(){
   if(localStorage.getItem('og_pwa_dismissed')){
     console.log('[PWA] Banner skipped — og_pwa_dismissed flag is set in localStorage');
