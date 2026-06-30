@@ -5709,7 +5709,7 @@ function showPWABanner(){
 
   const installRow=(text)=>`
     <div style="display:flex;gap:8px;">
-      <button onclick="installPWA()" style="flex:1;padding:11px;border-radius:11px;background:var(--gold);color:#08090C;font-size:14px;font-weight:700;border:none;cursor:pointer;">📲 ${text}</button>
+      <button onclick="smartInstall()" style="flex:1;padding:11px;border-radius:11px;background:var(--gold);color:#08090C;font-size:14px;font-weight:700;border:none;cursor:pointer;">📲 ${text}</button>
       <button onclick="dismissPWA()" style="padding:11px 16px;border-radius:11px;background:rgba(255,255,255,0.06);color:#5A6478;font-size:13px;font-weight:600;border:1px solid rgba(255,255,255,0.08);cursor:pointer;">${g('later')}</button>
     </div>`;
 
@@ -5729,22 +5729,17 @@ function showPWABanner(){
       ${showClose?'<button onclick="dismissPWA()" style="background:none;border:none;color:#5A6478;font-size:20px;cursor:pointer;padding:4px;flex-shrink:0;">✕</button>':''}
     </div>`;
 
-  // ── Branch by platform ──
-  if(window.pwaPrompt){
-    // Native install prompt is available (Android Chrome, desktop Chrome/Edge/Opera).
-    // One tap → real system install dialog, exactly like other PWAs.
-    banner.innerHTML = header(false) + installRow(g('btn'));
-  } else if(isIOS){
+  // ── Branch by platform — keep it SIMPLE: one button that "just works" ──
+  if(isIOS){
+    // No native install API on iOS Safari — only manual path exists.
     banner.innerHTML = header(true) + manualRow('⎙', `${g('iosHint')} <b style="color:var(--gold);">⎙ Share</b> ${g('iosStep')}`);
   } else if(isMac && isSafari){
     banner.innerHTML = header(true) + manualRow('⎙', `${g('iosHint')} <b style="color:var(--gold);">⎙ Share</b> ${g('macSafariStep')}`);
-  } else if(isAndroid){
-    // Android but beforeinstallprompt hasn't fired (e.g. in-app browser like
-    // MetaMask/Trust that doesn't support the PWA install API).
-    banner.innerHTML = header(true) + manualRow('⋮', `${g('iosHint')} <b style="color:var(--gold);">⋮ Menu</b> → "Add to Home screen" / "Install app"`);
-  } else if(isChromeLike){
-    // Desktop Chrome/Edge but prompt not captured yet — point at the address-bar icon.
-    banner.innerHTML = header(true) + manualRow('⊕', `Шукай іконку <b style="color:var(--gold);">⊕ встановити</b> в адресному рядку браузера`);
+  } else if(isAndroid || isChromeLike){
+    // Android Chrome, desktop Chrome/Edge/Opera — always show ONE "Install"
+    // button. If the native prompt isn't ready yet at click time, smartInstall()
+    // below waits briefly and retries before falling back to instructions.
+    banner.innerHTML = header(false) + installRow(g('btn'));
   } else {
     return; // Unsupported browser (e.g. Firefox desktop) — no install path, skip silently
   }
@@ -5753,12 +5748,34 @@ function showPWABanner(){
 }
 
 function triggerInstall(){
+  smartInstall();
+}
+
+// One button to rule them all: tries the native install prompt; if it's not
+// ready yet (race with beforeinstallprompt), waits up to ~2s and retries
+// before quietly falling back to on-screen instructions. This is what makes
+// "Встановити" work with a single tap for most people, most of the time —
+// exactly like before — without making anyone hunt through browser menus.
+async function smartInstall(){
   if(window.pwaPrompt){
-    installPWA();
-  } else {
-    localStorage.removeItem('og_pwa_dismissed');
-    showPWABanner();
+    await installPWA();
+    return;
   }
+  // Prompt not ready yet — wait briefly in case it's about to fire
+  let waited=0;
+  while(!window.pwaPrompt && waited<2000){
+    await new Promise(r=>setTimeout(r,200));
+    waited+=200;
+  }
+  if(window.pwaPrompt){
+    await installPWA();
+    return;
+  }
+  // Still not available — this browser/session genuinely doesn't support
+  // one-tap install right now. Show the manual fallback instead of nothing.
+  const ua=navigator.userAgent;
+  const isAndroid=/Android/i.test(ua);
+  showToast(isAndroid?'Меню ⋮ → "Встановити додаток"':'Шукай іконку встановлення в адресному рядку','ok');
 }
 
 // Показуємо кнопку в drawer якщо ще не встановлено (усі платформи, не лише мобільні)
