@@ -1714,18 +1714,30 @@ textarea.form-inp{resize:vertical;min-height:80px;}
 // ── PWA INSTALL — registered first, before anything else, so we never
 // miss the beforeinstallprompt event (it can fire very early on load) ──
 window.pwaPrompt=null;
+console.log('[PWA] Listener registered, waiting for beforeinstallprompt...');
 window.addEventListener('beforeinstallprompt',function(e){
+  console.log('[PWA] beforeinstallprompt FIRED ✓');
   e.preventDefault();
   window.pwaPrompt=e;
   // Notify UI bits that may already be rendered
   document.dispatchEvent(new CustomEvent('pwaPromptReady'));
 });
 window.addEventListener('appinstalled',function(){
+  console.log('[PWA] App installed ✓');
   window.pwaPrompt=null;
   localStorage.setItem('og_pwa_dismissed','1');
   const b=document.getElementById('pwaBanner');if(b)b.remove();
   const btn=document.getElementById('pwaInstallBtn');if(btn)btn.style.display='none';
   const dbtn=document.getElementById('drawerInstallBtn');if(dbtn)dbtn.style.display='none';
+});
+// Log why prompt might not fire — helps diagnose on real devices via remote debug
+window.addEventListener('load',function(){
+  setTimeout(function(){
+    console.log('[PWA] 3s after load — pwaPrompt is:', window.pwaPrompt?'AVAILABLE':'still null');
+    console.log('[PWA] display-mode standalone:', window.matchMedia('(display-mode: standalone)').matches);
+    console.log('[PWA] navigator.standalone (iOS):', navigator.standalone);
+    console.log('[PWA] SW controller:', navigator.serviceWorker?.controller?'active':'none yet');
+  }, 3000);
 });
 
 // ── CONFIG ──
@@ -5646,7 +5658,10 @@ openApp=function(){
 };
 // PWA Install Banner — supports Android, iOS, macOS Safari, and desktop Chrome/Edge
 function showPWABanner(){
-  if(localStorage.getItem('og_pwa_dismissed')) return;
+  if(localStorage.getItem('og_pwa_dismissed')){
+    console.log('[PWA] Banner skipped — og_pwa_dismissed flag is set in localStorage');
+    return;
+  }
   if(window.matchMedia('(display-mode: standalone)').matches) return;
   if(navigator.standalone) return;
   const existing=document.getElementById('pwaBanner');
@@ -5763,11 +5778,22 @@ function dismissPWA(){
 // If beforeinstallprompt fires AFTER the banner is already showing manual
 // instructions, swap it out for the real one-tap install banner.
 document.addEventListener('pwaPromptReady', function(){
+  console.log('[PWA] Prompt became ready — upgrading banner if shown');
   const btn=document.getElementById('pwaInstallBtn');if(btn)btn.style.display='block';
   const dbtn=document.getElementById('drawerInstallBtn');if(dbtn)dbtn.style.display='block';
   const existing=document.getElementById('pwaBanner');
-  if(existing){ existing.remove(); showPWABanner(); }
-  else { setTimeout(showPWABanner, 1000); }
+  if(existing){
+    // A manual-instructions banner is already showing — replace it with the
+    // real one-tap install banner now that the browser supports it.
+    // IMPORTANT: clear the dismissed flag here, because the user hasn't
+    // actually dismissed THIS (better) version of the banner yet.
+    existing.remove();
+    localStorage.removeItem('og_pwa_dismissed');
+    showPWABanner();
+  }
+  // If no banner is showing yet, the scheduled setTimeout(showPWABanner, 4500)
+  // below will pick up window.pwaPrompt naturally once it fires — no need to
+  // duplicate that here.
 });
 
 // Trigger banner on load for platforms that show manual instructions
@@ -5865,7 +5891,14 @@ if(window.ethereum){
   window.ethereum.on('chainChanged',()=>location.reload());
 }</script>
 <script>
-if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('/sw.js').then(()=>console.log('SW registered')).catch(e=>console.log('SW error',e));});}
+if('serviceWorker' in navigator){
+  // Register immediately (not waiting for window.load) — Chrome needs an
+  // active SW with a fetch handler to consider the site PWA-installable,
+  // and delaying registration delays/blocks the beforeinstallprompt event.
+  navigator.serviceWorker.register('/sw.js')
+    .then(reg=>console.log('[PWA] SW registered:',reg.scope))
+    .catch(e=>console.log('[PWA] SW registration failed:',e.message));
+}
 </script>
 </body>
 </html>
