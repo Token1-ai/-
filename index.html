@@ -1033,83 +1033,124 @@ async function smartConnectWallet(){
       <!-- ── BNB BATTLESHIP ── -->
       <div id="view-bnbbattle" style="display:none;">
         <div class="feed-hdr">⚓ BNB Battleship</div>
-        <div style="max-width:600px;margin:0 auto;padding:16px;">
 
-          <!-- Coming Soon Banner -->
-          <div style="text-align:center;padding:32px 20px;background:linear-gradient(135deg,rgba(59,130,246,0.08),rgba(38,217,138,0.04));border:1px solid rgba(59,130,246,0.25);border-radius:20px;margin-bottom:20px;">
-            <div style="font-size:56px;margin-bottom:12px;">⚓</div>
-            <div style="font-size:22px;font-weight:800;margin-bottom:8px;">BNB Battleship</div>
-            <div style="display:inline-block;background:#3B82F6;color:#fff;font-size:11px;font-weight:800;padding:3px 12px;border-radius:100px;margin-bottom:16px;letter-spacing:.05em;">COMING SOON</div>
-            <div style="font-size:14px;color:var(--muted);line-height:1.7;margin-bottom:20px;">
-              Real-money PvP Battleship.<br/>
-              Stake USDT or USDC. Winner takes 90%.<br/>
-              Smart contract holds funds — fully trustless.
+        <!-- Pass check -->
+        <div id="bnbbs-nopass" style="display:none;text-align:center;padding:40px 20px;max-width:480px;margin:0 auto;">
+          <div style="font-size:48px;margin-bottom:12px;">🔒</div>
+          <div style="font-size:18px;font-weight:700;margin-bottom:8px;">Pass Required</div>
+          <div style="font-size:14px;color:var(--muted);margin-bottom:20px;">BNB Battleship is available for Gold and Silver Pass holders only.</div>
+          <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+            <button onclick="document.getElementById('page-app').classList.remove('active');document.getElementById('page-landing').classList.add('active');setTimeout(function(){var el=document.getElementById('passes');if(el)el.scrollIntoView({behavior:'smooth'});},100);" style="padding:12px 24px;background:var(--gold);color:#08090C;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;">🥇 Get Gold Pass — $9</button>
+            <button onclick="document.getElementById('page-app').classList.remove('active');document.getElementById('page-landing').classList.add('active');setTimeout(function(){var el=document.getElementById('passes');if(el)el.scrollIntoView({behavior:'smooth'});},100);" style="padding:12px 24px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;">🥈 Get Silver Pass — $0.90</button>
+          </div>
+        </div>
+
+        <!-- Not connected -->
+        <div id="bnbbs-noconn" style="display:none;text-align:center;padding:40px 20px;">
+          <div style="font-size:48px;margin-bottom:12px;">👛</div>
+          <div style="font-size:18px;font-weight:700;margin-bottom:8px;">Connect Wallet</div>
+          <button onclick="handleConnectClick()" style="padding:12px 24px;background:var(--gold);color:#08090C;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;">Connect Wallet</button>
+        </div>
+
+        <!-- Main UI -->
+        <div id="bnbbs-main" style="display:none;">
+
+          <!-- LOBBY -->
+          <div id="bnbbs-lobby">
+            <div style="padding:16px 20px;max-width:600px;margin:0 auto;">
+
+              <!-- Create/Find -->
+              <div style="background:linear-gradient(145deg,rgba(59,130,246,0.07),rgba(59,130,246,0.02));border:1px solid rgba(59,130,246,0.2);border-radius:var(--r);padding:20px;margin-bottom:16px;">
+                <div style="font-size:15px;font-weight:700;margin-bottom:16px;">⚔️ Create New Game</div>
+
+                <!-- Token -->
+                <div style="margin-bottom:12px;">
+                  <div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600;">Token</div>
+                  <div style="display:flex;gap:8px;">
+                    <button id="bnbbs-tok-usdt" onclick="bnbbsSetToken('USDT')" style="flex:1;padding:9px;border-radius:9px;border:1px solid #3B82F6;background:rgba(59,130,246,0.1);color:#3B82F6;font-size:13px;font-weight:700;cursor:pointer;">USDT</button>
+                    <button id="bnbbs-tok-usdc" onclick="bnbbsSetToken('USDC')" style="flex:1;padding:9px;border-radius:9px;border:1px solid var(--border);background:var(--bg3);color:var(--muted);font-size:13px;font-weight:700;cursor:pointer;">USDC</button>
+                  </div>
+                </div>
+
+                <!-- Stake -->
+                <div style="margin-bottom:10px;">
+                  <div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600;">Stake Amount</div>
+                  <div style="position:relative;">
+                    <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);">$</span>
+                    <input id="bnbbs-amount" type="number" min="0.1" step="0.1" placeholder="0.00" style="width:100%;padding:10px 12px 10px 28px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:16px;box-sizing:border-box;outline:none;"/>
+                  </div>
+                  <div style="font-size:11px;color:var(--muted);margin-top:4px;">Min: $0.10 · No maximum limit</div>
+                </div>
+
+                <!-- Quick amounts -->
+                <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;">
+                  <button onclick="document.getElementById('bnbbs-amount').value='0.10'" style="padding:5px 10px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);color:var(--muted);font-size:12px;cursor:pointer;">$0.10</button>
+                  <button onclick="document.getElementById('bnbbs-amount').value='1'" style="padding:5px 10px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);color:var(--muted);font-size:12px;cursor:pointer;">$1</button>
+                  <button onclick="document.getElementById('bnbbs-amount').value='5'" style="padding:5px 10px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);color:var(--muted);font-size:12px;cursor:pointer;">$5</button>
+                  <button onclick="document.getElementById('bnbbs-amount').value='10'" style="padding:5px 10px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);color:var(--muted);font-size:12px;cursor:pointer;">$10</button>
+                  <button onclick="document.getElementById('bnbbs-amount').value='50'" style="padding:5px 10px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);color:var(--muted);font-size:12px;cursor:pointer;">$50</button>
+                </div>
+
+                <!-- Buttons -->
+                <div style="display:flex;gap:8px;">
+                  <button onclick="bnbbsMatchmake()" style="flex:1;padding:12px;border-radius:10px;background:#3B82F6;color:#fff;border:none;font-size:14px;font-weight:700;cursor:pointer;">🔍 Find Game</button>
+                  <button onclick="bnbbsCreate()" style="flex:1;padding:12px;border-radius:10px;background:var(--green);color:#08090C;border:none;font-size:14px;font-weight:700;cursor:pointer;">⚔️ Create Game</button>
+                </div>
+                <div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px;">Find Game — joins existing room with same stake, or creates new one</div>
+              </div>
+
+              <!-- Open rooms -->
+              <div style="font-size:13px;font-weight:700;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;">
+                <span>🔍 Open Rooms</span>
+                <button onclick="bnbbsLoadRooms()" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer;">Refresh</button>
+              </div>
+              <div id="bnbbs-rooms"><div class="app-loader">Loading...</div></div>
             </div>
-            <div style="font-size:13px;font-weight:700;color:#3B82F6;">🔔 Stay tuned for the launch!</div>
           </div>
 
-          <!-- Features -->
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px;">
-            <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px;text-align:center;">
-              <div style="font-size:22px;margin-bottom:6px;">💵</div>
-              <div style="font-size:13px;font-weight:700;">USDT or USDC</div>
-              <div style="font-size:11px;color:var(--muted);margin-top:3px;">Min stake $0.10</div>
+          <!-- GAME (same layout as testnet — boards side by side) -->
+          <div id="bnbbs-gameboard" style="display:none;">
+            <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+              <div>
+                <span style="font-size:14px;font-weight:700;" id="bnbbs-status">Placing ships...</span>
+                <span style="font-size:12px;color:var(--muted);margin-left:8px;" id="bnbbs-stake-display"></span>
+              </div>
+              <button onclick="leaveBNBGame()" style="background:var(--bg3);border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:5px 12px;font-size:12px;cursor:pointer;">← Leave</button>
             </div>
-            <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px;text-align:center;">
-              <div style="font-size:22px;margin-bottom:6px;">🏆</div>
-              <div style="font-size:13px;font-weight:700;">Winner gets 90%</div>
-              <div style="font-size:11px;color:var(--muted);margin-top:3px;">10% platform fee</div>
-            </div>
-            <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px;text-align:center;">
-              <div style="font-size:22px;margin-bottom:6px;">🔍</div>
-              <div style="font-size:13px;font-weight:700;">Matchmaking</div>
-              <div style="font-size:11px;color:var(--muted);margin-top:3px;">Auto-find by stake size</div>
-            </div>
-            <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px;text-align:center;">
-              <div style="font-size:22px;margin-bottom:6px;">💬</div>
-              <div style="font-size:13px;font-weight:700;">DM Opponent</div>
-              <div style="font-size:11px;color:var(--muted);margin-top:3px;">Chat before the game</div>
-            </div>
-          </div>
 
-          <!-- How it works -->
-          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:20px;">
-            <div style="font-size:13px;font-weight:700;margin-bottom:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">How it works</div>
-            <div style="display:flex;flex-direction:column;gap:10px;">
-              <div style="display:flex;align-items:flex-start;gap:12px;">
-                <div style="width:26px;height:26px;border-radius:50%;background:#3B82F6;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">1</div>
-                <div style="font-size:13px;color:var(--text);line-height:1.5;">Choose stake amount → USDT or USDC → funds go to smart contract</div>
+            <!-- Boards side by side — SAME as testnet battleGame layout -->
+            <div style="padding:16px;display:flex;gap:16px;flex-wrap:wrap;justify-content:center;">
+
+              <!-- MY board (left) -->
+              <div style="flex:1;min-width:280px;">
+                <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px;text-align:center;font-family:'Space Mono',monospace;letter-spacing:.08em;text-transform:uppercase;">Your Fleet</div>
+                <div id="bnbbs-myboard" style="display:grid;grid-template-columns:repeat(10,1fr);gap:2px;max-width:300px;margin:0 auto;"></div>
+                <div style="text-align:center;margin-top:10px;">
+                  <button onclick="bnbbsRandomPlaceShips()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 16px;font-size:13px;cursor:pointer;margin-right:8px;">🎲 Random</button>
+                  <button id="bnbbs-ready-btn" onclick="bnbbsMarkReady()" style="background:var(--gold);color:#08090C;border-radius:8px;padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer;display:none;">✓ Ready!</button>
+                </div>
               </div>
-              <div style="display:flex;align-items:flex-start;gap:12px;">
-                <div style="width:26px;height:26px;border-radius:50%;background:#3B82F6;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">2</div>
-                <div style="font-size:13px;color:var(--text);line-height:1.5;">Your room appears in lobby. Opponent can DM you or join directly</div>
-              </div>
-              <div style="display:flex;align-items:flex-start;gap:12px;">
-                <div style="width:26px;height:26px;border-radius:50%;background:#3B82F6;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">3</div>
-                <div style="font-size:13px;color:var(--text);line-height:1.5;">Both place ships → click Ready → game starts</div>
-              </div>
-              <div style="display:flex;align-items:flex-start;gap:12px;">
-                <div style="width:26px;height:26px;border-radius:50%;background:#3B82F6;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">4</div>
-                <div style="font-size:13px;color:var(--text);line-height:1.5;">Winner sinks all ships → 90% sent to wallet automatically</div>
+
+              <!-- ENEMY board (right) -->
+              <div style="flex:1;min-width:280px;">
+                <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px;text-align:center;font-family:'Space Mono',monospace;letter-spacing:.08em;text-transform:uppercase;" id="bnbbs-enemy-label">Enemy Fleet</div>
+                <div id="bnbbs-enemyboard" style="display:grid;grid-template-columns:repeat(10,1fr);gap:2px;max-width:300px;margin:0 auto;"></div>
               </div>
             </div>
-          </div>
 
-          <!-- Notification info -->
-          <div style="background:rgba(59,130,246,0.05);border:1px solid rgba(59,130,246,0.2);border-radius:14px;padding:14px;margin-bottom:20px;display:flex;gap:12px;align-items:flex-start;">
-            <div style="font-size:20px;">🔔</div>
-            <div style="font-size:13px;color:var(--muted);line-height:1.6;">
-              When someone joins your game you'll get an <b style="color:var(--text);">instant notification</b> — even if you're not on the game page. You can also <b style="color:var(--text);">message your opponent</b> directly from the lobby.
+            <!-- Ships panel — same as testnet -->
+            <div id="bnbbs-ships-panel" style="padding:0 16px 16px;">
+              <div style="font-size:12px;color:var(--muted);margin-bottom:10px;text-align:center;">Ships: <span id="bnbbs-ships-left" style="font-weight:700;color:var(--text);"></span></div>
+              <div id="bnbbs-ship-selector" style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-bottom:10px;"></div>
+              <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:10px;">
+                <button id="bnbbs-orient-btn" onclick="bnbbsToggleOrientation()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;">↔ Horizontal</button>
+                <button onclick="bnbbsClearShips()" style="background:rgba(255,77,77,0.1);border:1px solid rgba(255,77,77,.4);color:var(--red);border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;">🗑 Clear</button>
+              </div>
+              <div style="font-size:11px;color:var(--muted);text-align:center;">Select a ship then click on your board to place it</div>
             </div>
-          </div>
 
-          <!-- Twitter -->
-          <div style="text-align:center;padding:14px;background:var(--bg2);border:1px solid var(--border);border-radius:14px;">
-            <div style="font-size:13px;color:var(--muted);margin-bottom:10px;">Be first to know when it launches:</div>
-            <a href="https://x.com/OpenGatelive" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:9px 18px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;color:var(--text);text-decoration:none;font-size:13px;font-weight:700;">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.748l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
-              @OpenGatelive
-            </a>
+            <!-- Battle log -->
+            <div id="bnbbs-log" style="padding:0 16px 16px;max-height:120px;overflow-y:auto;"></div>
           </div>
 
         </div>
@@ -2342,6 +2383,554 @@ async function connectWallet(){
   }catch(e){ showToast('Connection cancelled','err'); }
 }
 
+// ── BNB BATTLESHIP ─────────────────────────────────────────────────────────
+
+// State
+var bnbbsToken='USDT', bnbbsGameId=null, bnbbsOrientation='h';
+var bnbbsMyShips=[], bnbbsPlaced=[], bnbbsSelectedSize=0;
+var bnbbsMyShots={}, bnbbsEnemyShots={};
+var bnbbsMyTurn=false, bnbbsIsReady=false;
+var bnbbsRealtimeChannel=null, bnbbsRoomsInterval=null;
+
+function getBNBBattleProvider(){
+  return new ethers.JsonRpcProvider('https://bsc-dataseed.binance.org/');
+}
+
+function bnbbsAddLog(msg){
+  var el=document.getElementById('bnbbs-log'); if(!el) return;
+  var d=document.createElement('div');
+  d.style.cssText='font-size:12px;color:var(--muted);padding:3px 0;border-bottom:1px solid var(--border);';
+  d.textContent=new Date().toLocaleTimeString()+' — '+msg;
+  el.insertBefore(d,el.firstChild);
+}
+
+// ── Pass check + init ──
+async function initBNBBattle(){
+  if(!userAddr){
+    document.getElementById('bnbbs-noconn').style.display='block';
+    document.getElementById('bnbbs-nopass').style.display='none';
+    document.getElementById('bnbbs-main').style.display='none';
+    return;
+  }
+  const OWNER='0xc85b148f3ebd09e9072706166b4cd99cf7ed3108';
+  const isOwner=userAddr.toLowerCase()===OWNER;
+  var pass=currentUser?.pass_type;
+  if(!isOwner&&(!pass||pass==='free')){
+    try{
+      var bnbP=new ethers.JsonRpcProvider('https://bsc-dataseed.binance.org/');
+      var nftAbi=['function balanceOf(address) view returns(uint256)'];
+      var g=new ethers.Contract(GOLD_PASS,nftAbi,bnbP);
+      var s=new ethers.Contract(SILVER_PASS,nftAbi,bnbP);
+      var r=await Promise.all([g.balanceOf(userAddr).catch(()=>0n),s.balanceOf(userAddr).catch(()=>0n)]);
+      if(r[0]>0n) pass='gold'; else if(r[1]>0n) pass='silver';
+    }catch(e){}
+  }
+  if(!isOwner&&(!pass||pass==='free')){
+    document.getElementById('bnbbs-noconn').style.display='none';
+    document.getElementById('bnbbs-nopass').style.display='block';
+    document.getElementById('bnbbs-main').style.display='none';
+    return;
+  }
+  document.getElementById('bnbbs-noconn').style.display='none';
+  document.getElementById('bnbbs-nopass').style.display='none';
+  document.getElementById('bnbbs-main').style.display='block';
+  await bnbbsLoadRooms();
+  if(bnbbsRoomsInterval) clearInterval(bnbbsRoomsInterval);
+  bnbbsRoomsInterval=setInterval(bnbbsLoadRooms,10000);
+  // Check active game
+  try{
+    var c=new ethers.Contract(BNB_BATTLE_ADDR,BNB_BATTLE_ABI,getBNBBattleProvider());
+    var gid=await c.getMyActiveGame(userAddr);
+    if(gid&&Number(gid)>0){ bnbbsGameId=Number(gid); bnbbsEnterGame(); }
+  }catch(e){}
+}
+
+// ── Token selector ──
+function bnbbsSetToken(tok){
+  bnbbsToken=tok;
+  var u=document.getElementById('bnbbs-tok-usdt');
+  var c=document.getElementById('bnbbs-tok-usdc');
+  if(u){u.style.background=tok==='USDT'?'rgba(59,130,246,0.2)':'var(--bg3)';u.style.borderColor=tok==='USDT'?'#3B82F6':'var(--border)';u.style.color=tok==='USDT'?'#3B82F6':'var(--muted)';}
+  if(c){c.style.background=tok==='USDC'?'rgba(59,130,246,0.2)':'var(--bg3)';c.style.borderColor=tok==='USDC'?'#3B82F6':'var(--border)';c.style.color=tok==='USDC'?'#3B82F6':'var(--muted)';}
+}
+
+// ── Load lobby ──
+async function bnbbsLoadRooms(){
+  var el=document.getElementById('bnbbs-rooms'); if(!el) return;
+  try{
+    var c=new ethers.Contract(BNB_BATTLE_ADDR,BNB_BATTLE_ABI,getBNBBattleProvider());
+    var ids=await c.getOpenGames();
+    console.log('[BNBBattle] gameCount open:',ids.length);
+    if(!ids||ids.length===0){
+      el.innerHTML='<div class="app-empty"><div class="app-empty-ico">⚓</div>No open games yet.<br>Create one above!</div>';
+      return;
+    }
+    var rooms=await Promise.all(ids.map(function(id){return c.getGame(id).then(function(g){return {id:Number(id),g};});}));
+    var wallets=[...new Set(rooms.map(function(r){return r.g.player1.toLowerCase();}))];
+    var profiles=[];
+    try{
+      var pr=await sb.from('users').select('wallet,username,avatar_url').in('wallet',wallets);
+      profiles=pr.data||[];
+    }catch(e){}
+    var profileMap={};
+    profiles.forEach(function(p){profileMap[p.wallet]=p;});
+    el.innerHTML=rooms.map(function(item){
+      var p1=item.g.player1.toLowerCase();
+      var prof=profileMap[p1]||{};
+      var name=prof.username||p1.slice(0,6)+'...'+p1.slice(-4);
+      var av=prof.avatar_url?'<img src="'+prof.avatar_url+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>':'👤';
+      var amount=(Number(item.g.betAmount)/1e6).toFixed(2);
+      var tok=Number(item.g.token)===0?'USDT':'USDC';
+      var isMe=p1===(userAddr||'').toLowerCase();
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:10px;">'
+        +'<div style="display:flex;align-items:center;gap:12px;">'
+        +'<div style="width:40px;height:40px;border-radius:50%;background:var(--bg3);border:1px solid var(--border);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">'+av+'</div>'
+        +'<div><div style="font-size:14px;font-weight:700;">'+esc(name)+'</div>'
+        +'<div style="font-size:13px;color:var(--gold);margin-top:3px;">💰 $'+amount+' '+tok+'</div></div>'
+        +'</div>'
+        +'<div style="display:flex;gap:6px;">'
+        +(!isMe?'<button onclick="openDM(\''+p1+'\')" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:12px;cursor:pointer;">💬 DM</button>':'')
+        +(!isMe?'<button onclick="bnbbsJoin('+item.id+')" style="background:var(--green);color:#08090C;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer;">⚔️ Join</button>'
+                :'<button onclick="bnbbsCancelGame('+item.id+',event)" style="background:rgba(255,77,77,0.1);border:1px solid rgba(255,77,77,.3);color:var(--red);border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;">✕ Cancel</button>')
+        +'</div></div>';
+    }).join('');
+  }catch(e){
+    console.error('[BNBBattle] loadRooms:',e);
+    el.innerHTML='<div style="text-align:center;color:var(--muted);font-size:13px;padding:20px;">'+esc(e.message?.slice(0,80)||'Error')+'</div>';
+  }
+}
+
+// ── Matchmake ──
+async function bnbbsMatchmake(){
+  var amount=parseFloat(document.getElementById('bnbbs-amount').value);
+  if(!amount||amount<0.1){showToast('Min stake $0.10','err');return;}
+  try{
+    showToast('Searching...','ok');
+    var c=new ethers.Contract(BNB_BATTLE_ADDR,BNB_BATTLE_ABI,getBNBBattleProvider());
+    var ids=await c.getOpenGames();
+    var amountRaw=BigInt(Math.round(amount*1e6));
+    var tokenIdx=bnbbsToken==='USDT'?0:1;
+    for(var i=0;i<ids.length;i++){
+      var g=await c.getGame(ids[i]);
+      if(g.player1.toLowerCase()===(userAddr||'').toLowerCase()) continue;
+      if(Number(g.token)===tokenIdx&&g.betAmount===amountRaw){
+        showToast('Match found! Joining...','ok');
+        await bnbbsJoin(Number(ids[i])); return;
+      }
+    }
+    showToast('No match. Creating room...','ok');
+    await bnbbsCreate();
+  }catch(e){showToast('Error: '+(e.message||'').slice(0,40),'err');}
+}
+
+// ── Create game ──
+async function bnbbsCreate(){
+  if(!userAddr){showToast('Connect wallet first','err');return;}
+  var amount=parseFloat(document.getElementById('bnbbs-amount').value);
+  if(!amount||amount<0.1){showToast('Min stake $0.10','err');return;}
+  try{
+    await _switchToBNBChain();
+    var amountRaw=BigInt(Math.round(amount*1e6));
+    var tokenAddr=bnbbsToken==='USDT'?USDT_BNB_ADDR:USDC_BNB_ADDR;
+    var tokenIdx=bnbbsToken==='USDT'?0:1;
+    var bnbProv=new ethers.BrowserProvider(window.ethereum);
+    var bnbSigner=await bnbProv.getSigner();
+    // Approve
+    showToast('Approving '+bnbbsToken+'...','ok');
+    var tok=new ethers.Contract(tokenAddr,ERC20_ABI,bnbSigner);
+    var allowance=await tok.allowance(userAddr,BNB_BATTLE_ADDR);
+    if(allowance<amountRaw){
+      var appTx=await tok.approve(BNB_BATTLE_ADDR,amountRaw*100n);
+      await appTx.wait();
+    }
+    showToast('Creating game...','ok');
+    var contract=new ethers.Contract(BNB_BATTLE_ADDR,BNB_BATTLE_ABI,bnbSigner);
+    var tx=await contract.createGame(amountRaw,tokenIdx);
+    await tx.wait();
+    try{var newId=await contract.gameCount();bnbbsGameId=Number(newId);}
+    catch(e){var aid=await contract.getMyActiveGame(userAddr);bnbbsGameId=Number(aid);}
+    showToast('Room created! Waiting for opponent...','ok');
+    await bnbbsLoadRooms();
+    // Show notification banner
+    bnbbsShowWaitBanner();
+  }catch(e){
+    if(e.code===4001||e.message?.includes('rejected'))showToast('Cancelled','err');
+    else showToast('Error: '+(e.message||'').slice(0,50),'err');
+  }
+}
+
+function bnbbsShowWaitBanner(){
+  var banner=document.createElement('div');
+  banner.style.cssText='padding:12px 16px;background:rgba(38,217,138,0.08);border:1px solid rgba(38,217,138,0.3);border-radius:12px;margin:12px 16px 0;display:flex;align-items:center;gap:12px;';
+  banner.innerHTML='<div style="font-size:22px;">⏳</div><div style="flex:1;font-size:13px;color:var(--text);">Your room is in the lobby! You\'ll get a notification when someone joins.</div>';
+  var lobby=document.getElementById('bnbbs-lobby');
+  if(lobby){var existing=lobby.querySelector('.wait-banner');if(existing)existing.remove();banner.className='wait-banner';lobby.insertBefore(banner,lobby.firstChild);}
+}
+
+// ── Join game ──
+async function bnbbsJoin(gameId){
+  if(!userAddr){showToast('Connect wallet first','err');return;}
+  try{
+    await _switchToBNBChain();
+    var bnbProv=new ethers.BrowserProvider(window.ethereum);
+    var bnbSigner=await bnbProv.getSigner();
+    var c=new ethers.Contract(BNB_BATTLE_ADDR,BNB_BATTLE_ABI,bnbSigner);
+    var g=await c.getGame(gameId);
+    var amountRaw=g.betAmount;
+    var tokenAddr=Number(g.token)===0?USDT_BNB_ADDR:USDC_BNB_ADDR;
+    // Approve
+    showToast('Approving...','ok');
+    var tok=new ethers.Contract(tokenAddr,ERC20_ABI,bnbSigner);
+    var allowance=await tok.allowance(userAddr,BNB_BATTLE_ADDR);
+    if(allowance<amountRaw){
+      var appTx=await tok.approve(BNB_BATTLE_ADDR,amountRaw*100n);
+      await appTx.wait();
+    }
+    showToast('Joining...','ok');
+    var tx=await c.joinGame(gameId);
+    await tx.wait();
+    bnbbsGameId=gameId;
+    var amount=(Number(g.betAmount)/1e6).toFixed(2);
+    var tok2=Number(g.token)===0?'USDT':'USDC';
+    showToast('Joined! Place your ships.','ok');
+    bnbbsEnterGame('$'+amount+' '+tok2);
+  }catch(e){
+    if(e.code===4001||e.message?.includes('rejected'))showToast('Cancelled','err');
+    else showToast('Error: '+(e.message||'').slice(0,50),'err');
+  }
+}
+
+// ── Cancel game ──
+async function bnbbsCancelGame(gameId,ev){
+  var btn=ev&&ev.target;
+  if(btn){btn.disabled=true;btn.textContent='...';}
+  try{
+    await _switchToBNBChain();
+    var bnbProv=new ethers.BrowserProvider(window.ethereum);
+    var bnbSigner=await bnbProv.getSigner();
+    var c=new ethers.Contract(BNB_BATTLE_ADDR,BNB_BATTLE_ABI,bnbSigner);
+    var tx=await c.cancelGame(gameId);
+    await tx.wait();
+    showToast('Cancelled. Funds refunded.','ok');
+    bnbbsGameId=null;
+    await bnbbsLoadRooms();
+  }catch(e){
+    if(btn){btn.disabled=false;btn.textContent='✕ Cancel';}
+    if(e.code===4001||e.message?.includes('rejected'))showToast('Cancelled','err');
+    else showToast('Error: '+(e.message||'').slice(0,40),'err');
+  }
+}
+
+// ── Enter game view (same as testnet: boards side by side) ──
+function bnbbsEnterGame(stakeInfo){
+  document.getElementById('bnbbs-lobby').style.display='none';
+  document.getElementById('bnbbs-gameboard').style.display='block';
+  if(stakeInfo) document.getElementById('bnbbs-stake-display').textContent=stakeInfo;
+  document.getElementById('bnbbs-status').textContent='Place your ships, then click ✓ Ready';
+  // Init boards using SAME logic as testnet
+  bnbbsMyShips=[];bnbbsPlaced=[];bnbbsSelectedSize=0;
+  bnbbsMyShots={};bnbbsEnemyShots={};
+  bnbbsMyTurn=false;bnbbsIsReady=false;
+  bnbbsRenderBoards();
+  bnbbsBuildShipBtns();
+  document.getElementById('bnbbs-ships-panel').style.display='block';
+  document.getElementById('bnbbs-ready-btn').style.display='none';
+  document.getElementById('bnbbs-log').innerHTML='';
+  bnbbsAddLog('⚓ Game started! Place ships on LEFT board.');
+  // Subscribe to updates
+  if(bnbbsRealtimeChannel){sb.removeChannel(bnbbsRealtimeChannel);bnbbsRealtimeChannel=null;}
+  bnbbsRealtimeChannel=sb.channel('bnbbs-'+bnbbsGameId+'-'+Date.now())
+    .on('postgres_changes',{event:'*',schema:'public',table:'battleship_games',filter:'contract_game_id=eq.'+bnbbsGameId},function(payload){
+      if(payload.new) bnbbsHandleUpdate(payload.new);
+    }).subscribe();
+}
+
+function leaveBNBGame(){
+  if(bnbbsRealtimeChannel){sb.removeChannel(bnbbsRealtimeChannel);bnbbsRealtimeChannel=null;}
+  bnbbsGameId=null;bnbbsMyShips=[];bnbbsMyShots={};bnbbsEnemyShots={};
+  bnbbsMyTurn=false;bnbbsIsReady=false;
+  document.getElementById('bnbbs-lobby').style.display='block';
+  document.getElementById('bnbbs-gameboard').style.display='none';
+  bnbbsLoadRooms();
+}
+
+// ── Board rendering (SAME as testnet bsRenderBoards) ──
+function bnbbsRenderBoards(){
+  var myEl=document.getElementById('bnbbs-myboard');
+  var enEl=document.getElementById('bnbbs-enemyboard');
+  if(!myEl||!enEl) return;
+  myEl.innerHTML='';enEl.innerHTML='';
+  for(var i=0;i<100;i++){
+    (function(idx){
+      var mc=document.createElement('div');
+      mc.id='bnbbs-my-'+idx;
+      mc.style.cssText='aspect-ratio:1;border-radius:2px;background:var(--bg3);border:1px solid var(--border);'+(bnbbsIsReady?'cursor:default;':'cursor:crosshair;');
+      if(!bnbbsIsReady){
+        mc.onclick=function(){bnbbsPlaceShip(idx);};
+        mc.onmouseover=function(){bnbbsHover(idx,true);};
+        mc.onmouseout=function(){bnbbsHover(idx,false);};
+      }
+      myEl.appendChild(mc);
+      var ec=document.createElement('div');
+      ec.id='bnbbs-en-'+idx;
+      ec.style.cssText='aspect-ratio:1;border-radius:2px;background:var(--bg3);border:1px solid var(--border);cursor:'+(bnbbsMyTurn&&bnbbsIsReady?'crosshair':'not-allowed')+';';
+      ec.onclick=function(){bnbbsFire(idx);};
+      enEl.appendChild(ec);
+    })(i);
+  }
+  // Paint MY ships
+  bnbbsMyShips.forEach(function(idx){
+    var c=document.getElementById('bnbbs-my-'+idx);
+    if(c) c.style.cssText='aspect-ratio:1;border-radius:2px;background:rgba(38,217,138,0.35);border:1px solid var(--green);'+(bnbbsIsReady?'cursor:default;':'cursor:crosshair;');
+  });
+  // Enemy shots on MY board
+  Object.keys(bnbbsEnemyShots).forEach(function(idx){
+    var c=document.getElementById('bnbbs-my-'+idx);
+    if(!c) return;
+    var hit=bnbbsEnemyShots[idx]==='hit';
+    c.style.cssText='aspect-ratio:1;border-radius:2px;background:'+(hit?'rgba(255,77,77,0.8)':'rgba(90,100,120,0.4)')+';border:'+(hit?'2px solid #ff4d4d':'1px solid var(--muted)')+';cursor:default;';
+    c.innerHTML='<b style="color:#fff;font-size:'+(hit?'13':'10')+'px;line-height:1;">'+(hit?'✕':'•')+'</b>';
+  });
+  // MY shots on enemy board
+  Object.keys(bnbbsMyShots).forEach(function(idx){
+    var c=document.getElementById('bnbbs-en-'+idx);
+    if(!c) return;
+    var hit=bnbbsMyShots[idx]==='hit';
+    c.style.cssText='aspect-ratio:1;border-radius:2px;background:'+(hit?'rgba(255,77,77,0.8)':'rgba(90,100,120,0.4)')+';border:'+(hit?'2px solid #ff4d4d':'1px solid var(--muted)')+';cursor:default;';
+    c.innerHTML='<b style="color:#fff;font-size:'+(hit?'13':'10')+'px;line-height:1;">'+(hit?'✕':'•')+'</b>';
+  });
+}
+
+// ── Ship placement (SAME as testnet) ──
+function bnbbsBuildShipBtns(){
+  var el=document.getElementById('bnbbs-ship-selector'); if(!el) return;
+  var rem={};
+  BS_SHIP_SIZES.forEach(function(s){rem[s]=(rem[s]||0)+1;});
+  bnbbsPlaced.forEach(function(p){rem[p.size]--;});
+  el.innerHTML='';
+  var seen={};
+  BS_SHIP_SIZES.forEach(function(s){
+    if(seen[s]||rem[s]<=0){seen[s]=true;return;}
+    seen[s]=true;
+    var b=document.createElement('button');
+    var active=s===bnbbsSelectedSize;
+    b.style.cssText='padding:8px 10px;border-radius:8px;border:1px solid '+(active?'#3B82F6':'var(--border)')+';background:'+(active?'rgba(59,130,246,0.15)':'var(--bg3)')+';color:'+(active?'#3B82F6':'var(--muted)')+';font-size:12px;font-weight:600;cursor:pointer;font-family:monospace;';
+    b.innerHTML='▪'.repeat(s)+' <span style="font-size:10px;">×'+rem[s]+'</span>';
+    (function(sz){b.onclick=function(){bnbbsSelectedSize=sz;bnbbsBuildShipBtns();};})(s);
+    el.appendChild(b);
+  });
+  var left=BS_SHIP_SIZES.length-bnbbsPlaced.length;
+  var sl=document.getElementById('bnbbs-ships-left');
+  var rb=document.getElementById('bnbbs-ready-btn');
+  if(sl) sl.textContent=left>0?(left+' ships left to place'):'All placed! ✓ Click Ready';
+  if(rb) rb.style.display=left===0?'inline-block':'none';
+}
+
+function bnbbsGetCells(idx,size,horiz){
+  var row=Math.floor(idx/10),col=idx%10;
+  if(horiz&&col+size>10) return null;
+  if(!horiz&&row+size>10) return null;
+  var cells=[];
+  for(var i=0;i<size;i++) cells.push(horiz?(row*10+col+i):((row+i)*10+col));
+  return cells;
+}
+
+function bnbbsIsValid(cells){
+  for(var i=0;i<cells.length;i++){
+    var cell=cells[i],row=Math.floor(cell/10),col=cell%10;
+    for(var dr=-1;dr<=1;dr++) for(var dc=-1;dc<=1;dc++){
+      var nr=row+dr,nc=col+dc;
+      if(nr>=0&&nr<10&&nc>=0&&nc<10&&bnbbsMyShips.includes(nr*10+nc)&&!cells.includes(nr*10+nc)) return false;
+    }
+  }
+  return true;
+}
+
+function bnbbsPlaceShip(idx){
+  if(bnbbsIsReady) return;
+  if(!bnbbsSelectedSize){showToast('Select a ship below first','err');return;}
+  var cells=bnbbsGetCells(idx,bnbbsSelectedSize,bnbbsOrientation==='h');
+  if(!cells){showToast('Does not fit here','err');return;}
+  if(!bnbbsIsValid(cells)){showToast('Too close to another ship','err');return;}
+  var placed=bnbbsPlaced.filter(function(p){return p.size===bnbbsSelectedSize;}).length;
+  if(placed>=BS_SHIP_SIZES.filter(function(s){return s===bnbbsSelectedSize;}).length){showToast('All of this size placed','err');return;}
+  bnbbsPlaced.push({cells:cells,size:bnbbsSelectedSize});
+  cells.forEach(function(c){bnbbsMyShips.push(c);});
+  bnbbsSelectedSize=0;
+  bnbbsRenderBoards();bnbbsBuildShipBtns();
+}
+
+function bnbbsHover(idx,enter){
+  if(bnbbsIsReady||!bnbbsSelectedSize) return;
+  for(var i=0;i<100;i++){
+    var c=document.getElementById('bnbbs-my-'+i);
+    if(c&&!bnbbsMyShips.includes(i)) c.style.background='var(--bg3)';
+  }
+  if(!enter) return;
+  var cells=bnbbsGetCells(idx,bnbbsSelectedSize,bnbbsOrientation==='h');
+  if(!cells) return;
+  var ok=bnbbsIsValid(cells);
+  cells.forEach(function(ci){
+    var c=document.getElementById('bnbbs-my-'+ci);
+    if(c&&!bnbbsMyShips.includes(ci)) c.style.background=ok?'rgba(38,217,138,0.4)':'rgba(255,77,77,0.4)';
+  });
+}
+
+function bnbbsToggleOrientation(){
+  bnbbsOrientation=bnbbsOrientation==='h'?'v':'h';
+  var btn=document.getElementById('bnbbs-orient-btn');
+  if(btn) btn.textContent=bnbbsOrientation==='h'?'↔ Horizontal':'↕ Vertical';
+}
+
+function bnbbsClearShips(){bnbbsMyShips=[];bnbbsPlaced=[];bnbbsSelectedSize=0;bnbbsRenderBoards();bnbbsBuildShipBtns();}
+
+function bnbbsRandomPlaceShips(){
+  for(var attempt=0;attempt<10;attempt++){
+    bnbbsMyShips=[];bnbbsPlaced=[];bnbbsSelectedSize=0;
+    var ok=true;
+    for(var si=0;si<BS_SHIP_SIZES.length;si++){
+      var size=BS_SHIP_SIZES[si];
+      var placed=false,tries=0;
+      while(!placed&&tries++<5000){
+        var h=Math.random()>.5;
+        var r=Math.floor(Math.random()*(h?10:11-size));
+        var c=Math.floor(Math.random()*(h?11-size:10));
+        var cells=bnbbsGetCells(r*10+c,size,h);
+        if(cells&&bnbbsIsValid(cells)){
+          bnbbsPlaced.push({cells:cells,size:size});
+          cells.forEach(function(x){bnbbsMyShips.push(x);});
+          placed=true;
+        }
+      }
+      if(!placed){ok=false;break;}
+    }
+    if(ok) break;
+  }
+  bnbbsRenderBoards();bnbbsBuildShipBtns();
+}
+
+// ── Ready ──
+async function bnbbsMarkReady(){
+  if(bnbbsPlaced.length<BS_SHIP_SIZES.length){showToast('Place all ships first!','err');return;}
+  bnbbsIsReady=true;
+  bnbbsRenderBoards();
+  document.getElementById('bnbbs-ships-panel').style.display='none';
+  document.getElementById('bnbbs-ready-btn').style.display='none';
+  // Save to Supabase
+  try{
+    var c2=new ethers.Contract(BNB_BATTLE_ADDR,BNB_BATTLE_ABI,getBNBBattleProvider());
+    var gd=await c2.getGame(bnbbsGameId);
+    var isP1=gd.player1.toLowerCase()===userAddr.toLowerCase();
+    var col=isP1?'player1_board':'player2_board';
+    var upd={contract_game_id:bnbbsGameId,status:'playing'};
+    upd[col]=JSON.stringify(bnbbsMyShips);
+    await sb.from('battleship_games').upsert(upd,{onConflict:'contract_game_id'});
+    showToast('Ready! Waiting for opponent...','ok');
+    document.getElementById('bnbbs-status').textContent='⏳ Waiting for opponent to place ships...';
+  }catch(e){showToast('Ready (DB save failed)','ok');}
+}
+
+// ── Fire ──
+async function bnbbsFire(idx){
+  if(!bnbbsMyTurn){showToast('Not your turn','err');return;}
+  if(bnbbsMyShots[idx]!==undefined){showToast('Already fired here','err');return;}
+  if(!bnbbsGameId) return;
+  try{
+    var c=new ethers.Contract(BNB_BATTLE_ADDR,BNB_BATTLE_ABI,getBNBBattleProvider());
+    var gd=await c.getGame(bnbbsGameId);
+    var isP1=gd.player1.toLowerCase()===userAddr.toLowerCase();
+    var res=await sb.from('battleship_games').select('*').eq('contract_game_id',bnbbsGameId).single();
+    var game=res.data; if(!game) return;
+    var enemyCol=isP1?'player2_board':'player1_board';
+    var enemyShips=JSON.parse(game[enemyCol]||'[]');
+    if(enemyShips.length===0){showToast('Opponent placing ships, wait...','err');return;}
+    var hit=enemyShips.includes(idx);
+    bnbbsMyShots[idx]=hit?'hit':'miss';
+    bnbbsRenderBoards();
+    bnbbsAddLog(hit?('💥 Hit! '+bnbbsCoord(idx)+' — SHOOT AGAIN!'):('💧 Miss '+bnbbsCoord(idx)));
+    // Check win
+    var allHit=enemyShips.every(function(s){return Object.keys(bnbbsMyShots).filter(function(k){return bnbbsMyShots[k]==='hit';}).map(Number).includes(s);});
+    var shotsKey=isP1?'player1_shots':'player2_shots';
+    var upd={};
+    upd[shotsKey]=JSON.stringify(bnbbsMyShots);
+    if(allHit){
+      upd.status='finished';upd.winner_wallet=userAddr.toLowerCase();
+    } else if(!hit){
+      upd.current_turn=(isP1?gd.player2:gd.player1).toLowerCase();
+    }
+    await sb.from('battleship_games').update(upd).eq('contract_game_id',bnbbsGameId);
+    if(allHit){
+      bnbbsMyTurn=false;
+      document.getElementById('bnbbs-status').textContent='🎉 YOU WIN!';
+      bnbbsAddLog('🎉 YOU WIN! Calling oracle...');
+      showToast('🎉 YOU WIN! Paying out...','ok');
+      // Call oracle
+      try{
+        await fetch('/api/oracle',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','x-oracle-secret':'opengate-oracle-2026'},
+          body:JSON.stringify({action:'declareWinner',gameId:bnbbsGameId,winner:userAddr})
+        });
+      }catch(e){}
+    } else if(hit){
+      document.getElementById('bnbbs-status').textContent='💥 HIT! Shoot again!';
+    } else {
+      bnbbsMyTurn=false;
+      document.getElementById('bnbbs-status').textContent='⏳ Opponent\'s turn...';
+    }
+  }catch(e){showToast('Error: '+(e.message||'').slice(0,40),'err');}
+}
+
+function bnbbsCoord(idx){return String.fromCharCode(65+idx%10)+(Math.floor(idx/10)+1);}
+
+// ── Handle realtime update ──
+function bnbbsHandleUpdate(game){
+  if(!game||!bnbbsGameId) return;
+  if(game.status==='finished'){
+    var won=game.winner_wallet===userAddr.toLowerCase();
+    document.getElementById('bnbbs-status').textContent=won?'🎉 YOU WIN!':'💀 You lost!';
+    showToast(won?'🎉 YOU WIN!':'💀 You lost!',won?'ok':'err');
+    bnbbsMyTurn=false; return;
+  }
+  try{
+    var c=new ethers.Contract(BNB_BATTLE_ADDR,BNB_BATTLE_ABI,getBNBBattleProvider());
+    c.getGame(bnbbsGameId).then(function(gd){
+      var isP1=gd.player1.toLowerCase()===userAddr.toLowerCase();
+      var myTurn=(game.current_turn||'').toLowerCase()===userAddr.toLowerCase();
+      // Load enemy shots
+      var enemyShotsRaw=JSON.parse(isP1?game.player2_shots||'{}':game.player1_shots||'{}');
+      var prevLen=Object.keys(bnbbsEnemyShots).length;
+      bnbbsEnemyShots=enemyShotsRaw;
+      if(Object.keys(bnbbsEnemyShots).length>prevLen){
+        var newKeys=Object.keys(bnbbsEnemyShots).filter(function(k){return !(k in bnbbsEnemyShots);});
+        // Log last enemy shot
+        var lastK=Object.keys(bnbbsEnemyShots).pop();
+        if(lastK) bnbbsAddLog(bnbbsEnemyShots[lastK]==='hit'?('💥 Enemy hit '+bnbbsCoord(Number(lastK))+'!'):('💧 Enemy missed '+bnbbsCoord(Number(lastK))));
+      }
+      // Both boards placed?
+      if(game.player1_board&&game.player2_board&&!bnbbsIsReady){
+        document.getElementById('bnbbs-status').textContent='⏳ Opponent ready! Click ✓ Ready when done.';
+      }
+      bnbbsMyTurn=myTurn&&bnbbsIsReady;
+      bnbbsRenderBoards();
+      if(myTurn&&bnbbsIsReady){
+        document.getElementById('bnbbs-status').textContent='⚔️ YOUR TURN — click the RIGHT board!';
+        document.getElementById('bnbbs-enemy-label').textContent='Enemy Fleet — CLICK TO FIRE!';
+      } else if(bnbbsIsReady){
+        document.getElementById('bnbbs-status').textContent='⏳ Opponent\'s turn...';
+      }
+    }).catch(function(){});
+  }catch(e){}
+}
+
+async function _switchToBNBChain(){
+  if(!window.ethereum) return;
+  try{await window.ethereum.request({method:'wallet_switchEthereumChain',params:[{chainId:'0x38'}]});}
+  catch(e){
+    if(e.code===4902) await window.ethereum.request({method:'wallet_addEthereumChain',params:[{chainId:'0x38',chainName:'BNB Smart Chain',rpcUrls:['https://bsc-dataseed.binance.org/'],nativeCurrency:{name:'BNB',symbol:'BNB',decimals:18},blockExplorerUrls:['https://bscscan.com']}]});
+  }
+}
+
 async function switchToBNB(){
   try{ await window.ethereum.request({method:'wallet_switchEthereumChain',params:[{chainId:BNB_ID}]}); }
   catch(e){ 
@@ -2443,6 +3032,7 @@ function showTab(tab){
   document.getElementById('view-faucet').style.display=tab==='faucet'?'block':'none';
   document.getElementById('view-bnblottery').style.display=tab==='bnblottery'?'block':'none';
   document.getElementById('view-bnbbattle').style.display=tab==='bnbbattle'?'block':'none';
+  if(tab==='bnbbattle') initBNBBattle();
   // Scroll to top on mobile when switching tabs
   window.scrollTo({top:0,behavior:'smooth'});
   // Desktop sidebar
